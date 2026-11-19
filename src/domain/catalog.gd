@@ -3,6 +3,12 @@ extends RefCounted
 const RaceEvents = preload("res://src/race/race_events.gd")
 
 const STARTER := "brasa_16"
+const SECTORS := {
+	"garage": {"name": "Oficina Ribeira", "purpose": "Garagem, preparação e pintura"},
+	"meet": {"name": "Porto da Vigília", "purpose": "Pilotos, encontros e duelos"},
+	"official": {"name": "Paddock Candeia", "purpose": "Inscrições, Copa da Orla e treino livre"},
+	"market": {"name": "Revenda do Cais", "purpose": "Carros à venda e ofertas de particulares"},
+}
 const COLORS := {
 	"Marfim": "#E4DBC6",
 	"Sal": "#F6F2E9",

@@ -8,6 +8,8 @@ const EVENT_ID := "reta_402"
 const EVENT_TITLE := "Quarto de Milha"
 const THROTTLE_FINGER := 0
 const AUX_FINGER := 1
+const WALK_FINGER := 4
+const ACTION_FINGER := 5
 
 var _result: Dictionary = {}
 
@@ -40,21 +42,30 @@ func _run() -> void:
 	var game := main.instantiate()
 	root.add_child(game)
 	await process_frame
-	if not _expect(is_instance_valid(game.hub) and game.hub.visible, "Garagem invisível ao iniciar."):
+	var world = game.hub
+	if not _expect(is_instance_valid(world.sector) and world.sector_id == "garage", "Garagem ausente ao iniciar."):
 		return
-	if not _press(_find_button(game.hub, "Competições", true), "Acesso às competições"):
+	if not await _interact_at(world, "travel", ""):
 		return
-	await process_frame
-	var card_title := _find_label(game.hub, EVENT_TITLE)
-	if not _expect(card_title != null, "Quarto de Milha ausente no calendário oficial."):
+	var venue := _find_label(world.dialogs, "Paddock Candeia")
+	if not _expect(venue != null, "Paddock Candeia ausente na saída."):
 		return
-	if not _press(_find_button(card_title.get_parent(), "Ver prova"), "Detalhes da arrancada"):
-		return
-	if not _press(_find_button(game.hub, "Inscrever e correr"), "Inscrição da arrancada"):
+	if not _press(_find_button(venue.get_parent().get_parent(), "Viajar"), "Viajar para o paddock"):
 		return
 	for frame in 3:
 		await process_frame
-	if not _expect(is_instance_valid(game.race) and is_instance_valid(game.hud) and not game.hub.visible,
+	if not _expect(world.sector_id == "official" and state.last_sector == "official", "Setor oficial não carregado."):
+		return
+	if not await _interact_at(world, "event", EVENT_ID):
+		return
+	var parked_at: Vector3 = world.player.global_position
+	if not _expect(_find_label(world.dialogs, EVENT_TITLE) != null, "O guichê abriu a prova errada."):
+		return
+	if not _press(_find_button(world.dialogs, "Inscrever e correr"), "Inscrição da arrancada"):
+		return
+	for frame in 3:
+		await process_frame
+	if not _expect(is_instance_valid(game.race) and is_instance_valid(game.hud) and not is_instance_valid(world.sector),
 			"A inscrição não abriu o HUD e a pista."):
 		return
 
@@ -135,12 +146,14 @@ func _run() -> void:
 	var saved_receipt: Dictionary = saved.get("last_race", {})
 	var saved_records: Dictionary = saved.get("records", {})
 	var saved_record: Dictionary = saved_records.get(EVENT_ID, {})
-	if not _expect(not is_instance_valid(game.race) and game.hub.visible,
-			"O resultado não retornou ao calendário."):
+	if not _expect(not is_instance_valid(game.race) and world.sector_id == "official" and is_instance_valid(world.sector)
+			and world.player.global_position.distance_to(parked_at) < 0.3,
+			"O resultado não retornou ao mesmo ponto no paddock."):
 		return
 	if not _expect(saved.get("pending_race", {"pending": true}).is_empty()
 			and saved_receipt.get("race_id") == race_id and int(saved_receipt.get("payout", 0)) == payout
 			and int(saved.get("money", -1)) == state.money and int(saved_record.get("attempts", 0)) == 1
+			and saved.get("last_sector") == "official"
 			and int(saved_record.get("best_ms", 0)) == int(_result.time_ms),
 			"O arquivo salvo diverge da liquidação ou do histórico da corrida."):
 		return
@@ -152,9 +165,37 @@ func _run() -> void:
 
 func _touch(hud: Control, zone: String, finger: int, pressed: bool) -> void:
 	var hit_area: Rect2 = hud.touch_zones[zone]
+	_screen_touch(hud.get_global_transform_with_canvas() * hit_area.get_center(), finger, pressed)
+
+
+func _interact_at(world: Node3D, kind: String, key: String) -> bool:
+	var point := Vector3.INF
+	for target in world.sector.targets:
+		if target.kind == kind and target.key == key:
+			point = target.position
+			break
+	if not _expect(point.is_finite(), "Ponto de interação ausente em %s." % world.sector_id):
+		return false
+	var difference: Vector3 = point - world.player.global_position
+	var direction := Vector2(difference.x, difference.z).normalized()
+	var stick: Vector2 = world.hud.stick_center + direction * 53.0
+	_screen_touch(stick, WALK_FINGER, true)
+	var can_interact := func() -> bool:
+		return world._target != null and world._target.kind == kind and world._target.key == key
+	var near := await _wait_for(can_interact, 600)
+	_screen_touch(stick, WALK_FINGER, false)
+	if not _expect(near and world.hud.action_button.visible, "O toque não alcançou %s no mapa." % kind):
+		return false
+	var center: Vector2 = world.hud.action_button.get_global_rect().get_center()
+	_screen_touch(center, ACTION_FINGER, true)
+	_screen_touch(center, ACTION_FINGER, false)
+	return _expect(world.dialogs.is_open(), "O toque não abriu a interação em %s." % kind)
+
+
+func _screen_touch(position: Vector2, finger: int, pressed: bool) -> void:
 	var event := InputEventScreenTouch.new()
 	event.index = finger
-	event.position = hud.get_global_transform_with_canvas() * hit_area.get_center()
+	event.position = position
 	event.pressed = pressed
 	root.push_input(event, true)
 

@@ -1,13 +1,15 @@
 extends Node
 
-const Hub = preload("res://src/ui/hub.gd")
+const Exploration = preload("res://src/world/exploration.gd")
 const RaceSession = preload("res://src/race/race_session.gd")
 const RaceHUD = preload("res://src/ui/race_hud.gd")
 const GameAudio = preload("res://src/audio/game_audio.gd")
+const Catalog = preload("res://src/domain/catalog.gd")
+const Routes = preload("res://src/tracks/route_data.gd")
 
 @onready var game_state := get_node("/root/GameState")
 
-var hub: Control
+var hub: Exploration
 var race: Node3D
 var hud: Control
 var audio: Node
@@ -23,8 +25,9 @@ func _ready() -> void:
 	add_child(audio)
 	_apply_settings()
 	audio.set_scene(active_sector)
-	hub = Hub.new()
+	hub = Exploration.new()
 	hub.race_requested.connect(begin_race)
+	hub.practice_requested.connect(func(track: String) -> void: call_deferred("_open_practice", track))
 	hub.sector_changed.connect(_on_sector_changed)
 	hub.ui_cue.connect(_on_ui_cue)
 	add_child(hub)
@@ -50,6 +53,21 @@ func _open_race(event_id: String, npc_id: String, wager: int, pink: bool) -> voi
 	_launch_race(response.race)
 
 
+func _open_practice(track: String) -> void:
+	if is_instance_valid(race):
+		return
+	var car: Dictionary = game_state.active_car()
+	if car.is_empty() or not game_state.pending_race.is_empty():
+		hub.show_notice("Escolha um carro disponível para entrar na pista.")
+		return
+	var route := Routes.get_route(track)
+	_launch_race({
+		"event": {"mode": "practice", "track": track, "course_mode": "circuit" if track == "autodromo" else "sprint",
+			"name": str(route.name), "opponents": 0},
+		"car": Catalog.effective(car), "opponents": [], "settings": game_state.settings,
+	})
+
+
 func _launch_race(ticket: Dictionary) -> void:
 	if is_instance_valid(race):
 		return
@@ -57,8 +75,7 @@ func _launch_race(ticket: Dictionary) -> void:
 	race_settled = false
 	race_result = {}
 	_apply_settings()
-	hub.hide()
-	hub.process_mode = Node.PROCESS_MODE_DISABLED
+	hub.suspend()
 	audio.set_vehicle(active_ticket.car)
 	audio.set_scene("race")
 	race = RaceSession.new()
@@ -76,7 +93,7 @@ func _launch_race(ticket: Dictionary) -> void:
 	hud.reset_requested.connect(race.reset_player)
 	hud.camera_requested.connect(race.cycle_camera)
 	hud.withdraw_requested.connect(race.abort)
-	hud.return_requested.connect(_close_race)
+	hud.return_requested.connect(func() -> void: call_deferred("_close_race"))
 	hud.retry_requested.connect(_settle_race)
 	interface.add_child(hud)
 	race.telemetry_changed.connect(_on_telemetry)
@@ -108,16 +125,15 @@ func _settle_race() -> void:
 
 
 func _close_race() -> void:
-	if not is_instance_valid(race) or not race_settled:
+	if not is_instance_valid(race) or (not race_settled and active_ticket.event.mode != "practice"):
 		return
-	race.queue_free()
+	var session := race
 	race = null
 	hud = null
 	active_ticket = {}
-	hub.process_mode = Node.PROCESS_MODE_INHERIT
-	if hub.has_method("refresh"):
-		hub.refresh()
-	hub.show()
+	remove_child(session)
+	session.queue_free()
+	hub.resume()
 	audio.set_scene(active_sector)
 
 
@@ -150,10 +166,12 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
 		if is_instance_valid(hud) and not race_settled:
 			hud.request_pause()
+		elif is_instance_valid(hub):
+			hub.release_controls()
 	elif what == NOTIFICATION_WM_GO_BACK_REQUEST and is_instance_valid(hub):
 		if race_settled and is_instance_valid(race):
 			_close_race()
 		elif is_instance_valid(hud):
 			hud.request_pause()
-		elif not hub.back():
-			get_tree().quit()
+		else:
+			hub.back()

@@ -23,6 +23,7 @@ var _camera: Camera3D
 var _camera_aim := Vector3.ZERO
 var _camera_mode := 0
 var _mode := "circuit"
+var _practice := false
 var _laps := 1
 var _race_distance := 0.0
 var _start_distance := 0.0
@@ -58,6 +59,9 @@ func _ready() -> void:
 		set_physics_process(false)
 		return
 	_mode = str(_event.get("mode", "circuit"))
+	_practice = _mode == "practice"
+	if _practice:
+		_countdown = 0.0
 	_traction_control = bool(_options.get("assists", true))
 	_sensitivity = clampf(float(_options.get("sensitivity", 1.0)), 0.35, 2.0)
 	_camera_mode = int(_options.get("camera", 0))
@@ -191,7 +195,7 @@ func reset_player() -> void:
 
 
 func abort() -> void:
-	if not _finished and is_instance_valid(_player):
+	if not _practice and not _finished and is_instance_valid(_player):
 		finish_race(false)
 
 
@@ -209,9 +213,9 @@ func _physics_process(delta: float) -> void:
 			shift_up()
 		step_grid(delta, controls)
 		update_standings()
-		if _player.finish_time >= 0.0:
+		if not _practice and _player.finish_time >= 0.0:
 			finish_race(true)
-		elif _elapsed >= _time_limit:
+		elif not _practice and _elapsed >= _time_limit:
 			finish_race(false)
 	_was_handbrake = controls.w > 0.0
 	update_camera(delta)
@@ -405,6 +409,11 @@ func update_car_road(car: DriveCar, delta: float) -> void:
 				reset_car(car)
 			return
 
+	if _practice:
+		if not car.off_track:
+			car.verified_distance = distance
+		car.apply_pose(road, delta)
+		return
 	var legally_on_course := not car.off_track and not car.wrong_way
 	if legally_on_course and car.progress_distance >= car.next_checkpoint:
 		car.verified_distance = car.progress_distance
@@ -491,7 +500,7 @@ func update_camera(delta: float) -> void:
 func send_telemetry() -> void:
 	var countdown := int(ceil(_countdown - 0.4)) if _countdown > 0.4 else 1
 	if _countdown <= 0.0:
-		countdown = 0 if _elapsed < 0.65 and not _finished else -1
+		countdown = 0 if _elapsed < 0.65 and not _finished and not _practice else -1
 	var chrono := _elapsed + _time_penalty
 	var rival_points := PackedVector2Array()
 	for car in _cars:

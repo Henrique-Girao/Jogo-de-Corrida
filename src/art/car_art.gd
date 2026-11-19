@@ -102,10 +102,8 @@ static var _wheel_mat: StandardMaterial3D
 static var _head_mat: StandardMaterial3D
 
 
-static func create(spec: Dictionary, quality: int = 1) -> Node3D:
-	var model := String(spec.get("model", spec.get("id", "brasa_16")))
-	if not PROFILES.has(model):
-		model = "brasa_16"
+static func create(spec: Dictionary, quality: int = 1, parked: bool = false) -> Node3D:
+	var model := _model_id(spec)
 	var profile: Dictionary = PROFILES[model]
 	var color := _color(spec.get("color", profile.paint), Color(profile.paint))
 	var detail := int(quality > 0)
@@ -136,20 +134,38 @@ static func create(spec: Dictionary, quality: int = 1) -> Node3D:
 	var axles: Vector2 = profile.axles
 	var front: Array[Node3D] = []
 	var rollers: Array[Node3D] = []
+	var tires: MultiMesh
+	if parked:
+		tires = MultiMesh.new()
+		tires.transform_format = MultiMesh.TRANSFORM_3D
+		tires.mesh = _wheel_cache[key]
+		tires.instance_count = 4
+	var wheel_index := 0
 	for axle in [axles.x, axles.y]:
 		for side in [-1.0, 1.0]:
+			var center := Vector3(side * (size.x * 0.492 - wheel.y * 0.25), wheel.x, axle * size.z)
+			var heading := PI if side < 0.0 else 0.0
+			if parked:
+				tires.set_instance_transform(wheel_index, Transform3D(Basis(Vector3.UP, heading), center))
+				wheel_index += 1
+				continue
 			var mount := Node3D.new()
-			mount.position = Vector3(side * (size.x * 0.492 - wheel.y * 0.25), wheel.x, axle * size.z)
+			mount.position = center
 			car.add_child(mount)
 			var roller := Node3D.new()
 			mount.add_child(roller)
 			var rim := _instance(_wheel_cache[key])
 			rim.material_override = _wheel_mat
-			rim.rotation.y = PI if side < 0.0 else 0.0
+			rim.rotation.y = heading
 			roller.add_child(rim)
 			rollers.append(roller)
 			if axle < 0.0:
 				front.append(mount)
+	if parked:
+		var wheels := MultiMeshInstance3D.new()
+		wheels.multimesh = tires
+		wheels.material_override = _wheel_mat
+		car.add_child(wheels)
 	car.set_meta("front", front)
 	car.set_meta("rollers", rollers)
 	car.set_meta("radius", wheel.x)
@@ -157,6 +173,21 @@ static func create(spec: Dictionary, quality: int = 1) -> Node3D:
 	car.set_meta("tail", tail)
 	car.set_meta("brake", false)
 	return car
+
+
+static func dimensions(spec: Dictionary) -> Vector3:
+	return PROFILES[_model_id(spec)].size
+
+
+static func set_paint(car: Node3D, tint: Color) -> void:
+	var body := car.get_meta("body") as MeshInstance3D
+	var paint := body.get_surface_override_material(0) as StandardMaterial3D
+	paint.albedo_color = tint
+
+
+static func _model_id(spec: Dictionary) -> String:
+	var model := str(spec.get("model", spec.get("id", "brasa_16")))
+	return model if PROFILES.has(model) else "brasa_16"
 
 
 static func set_motion(car: Node3D, speed: float, steer: float, brake: bool, delta: float) -> void:

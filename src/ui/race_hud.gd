@@ -22,6 +22,7 @@ const MODE_NAMES := {
 	"time_trial": "CONTRARRELÓGIO",
 	"drag": "ARRANCADA",
 	"championship": "CAMPEONATO",
+	"practice": "TREINO LIVRE",
 }
 const TOUCH_KEYS := ["left", "right", "brake", "aux", "throttle"]
 
@@ -43,7 +44,8 @@ var number_font: Font = HUD_NUMBERS
 func configure(race_ticket: Dictionary, outline: PackedVector2Array) -> void:
 	ticket = race_ticket
 	course = outline
-	telemetry = {"countdown": 3, "phase": "countdown", "laps": int(ticket.event.get("laps", 1))}
+	var practice := str(ticket.event.get("mode", "")) == "practice"
+	telemetry = {"countdown": -1 if practice else 3, "phase": "racing" if practice else "countdown", "laps": int(ticket.event.get("laps", 1))}
 
 
 func _ready() -> void:
@@ -149,7 +151,9 @@ func _draw() -> void:
 	_panel(Rect2(24, 22, 315, 102))
 	_txt(Vector2(38, 47), MODE_NAMES.get(mode, mode.to_upper()), 14, ACCENT, number_font)
 	_txt(Vector2(38, 74), str(event.get("name", "Corrida")), 24)
-	if mode == "time_trial":
+	if mode == "practice":
+		_txt(Vector2(39, 105), "PISTA ABERTA", 17, MUTED, number_font)
+	elif mode == "time_trial":
 		_txt(Vector2(39, 105), "META   " + _clock(int(telemetry.get("target_ms", event.get("target_ms", 0)))), 17, MUTED, number_font)
 	else:
 		var status := "POS %02d/%02d" % [int(telemetry.get("position", 1)), int(telemetry.get("field_size", 1))]
@@ -163,18 +167,20 @@ func _draw() -> void:
 		_panel(Rect2(24, 134, 185, 40))
 		_txt(Vector2(38, 160), "APOSTA DE CARRO", 15, HOT, number_font)
 
-	var right := size.x - 296.0
-	_panel(Rect2(right, 22, 199, 70))
-	_txt(Vector2(right + 14, 46), "TEMPO", 13, MUTED, number_font)
-	_txt(Vector2(right + 14, 75), _clock(int(telemetry.get("time_ms", 0))), 25, PAPER, number_font)
+	if mode != "practice":
+		var right := size.x - 296.0
+		_panel(Rect2(right, 22, 199, 70))
+		_txt(Vector2(right + 14, 46), "TEMPO", 13, MUTED, number_font)
+		_txt(Vector2(right + 14, 75), _clock(int(telemetry.get("time_ms", 0))), 25, PAPER, number_font)
 	if not course.is_empty():
 		_draw_map(Vector2(size.x - 178.0, 108.0))
 
-	var progress := clampf(float(telemetry.get("progress", 0.0)), 0.0, 1.0)
-	var progress_width := minf(300.0, size.x * 0.24)
-	var progress_origin := Vector2((size.x - progress_width) * 0.5, 28.0)
-	draw_rect(Rect2(progress_origin, Vector2(progress_width, 4.0)), INK)
-	draw_rect(Rect2(progress_origin, Vector2(progress_width * progress, 4.0)), ACCENT)
+	if mode != "practice":
+		var progress := clampf(float(telemetry.get("progress", 0.0)), 0.0, 1.0)
+		var progress_width := minf(300.0, size.x * 0.24)
+		var progress_origin := Vector2((size.x - progress_width) * 0.5, 28.0)
+		draw_rect(Rect2(progress_origin, Vector2(progress_width, 4.0)), INK)
+		draw_rect(Rect2(progress_origin, Vector2(progress_width * progress, 4.0)), ACCENT)
 
 	var bottom := size.y - 118.0
 	var d := Vector2(size.x * 0.5 - 115, bottom)
@@ -200,7 +206,7 @@ func _draw() -> void:
 		var mid := Vector2(size.x * 0.5, size.y * 0.48)
 		_panel(Rect2(mid - Vector2(103, 66), Vector2(206, 132)), ACCENT)
 		_center_text(countdown_label, mid.y + 27.0, 82, ACCENT, number_font)
-	elif bool(telemetry.get("wrong_way", false)):
+	elif mode != "practice" and bool(telemetry.get("wrong_way", false)):
 		_center_tag("SENTIDO CONTRÁRIO", 139.0, HOT)
 	elif bool(telemetry.get("off_track", false)):
 		_center_tag("FORA DO ASFALTO", 139.0, PAPER)
@@ -301,6 +307,7 @@ func _toggle_pause() -> void:
 
 func _show_pause() -> void:
 	var column := _sheet()
+	var practice := str(ticket.event.get("mode", "")) == "practice"
 	if confirming_withdrawal:
 		column.add_child(_label("Desistir da corrida?", 35, PAPER))
 		var text := "Sua desistência será registrada como abandono."
@@ -312,11 +319,14 @@ func _show_pause() -> void:
 		column.add_child(_button("Continuar na corrida", _toggle_pause, true))
 		column.add_child(_button("Confirmar desistência", func() -> void: withdraw_requested.emit(), false))
 		return
-	column.add_child(_label("Corrida pausada", 35, PAPER))
+	column.add_child(_label("Treino pausado" if practice else "Corrida pausada", 35, PAPER))
 	column.add_child(_button("Continuar", _toggle_pause, true))
 	column.add_child(_button("Reposicionar o carro", _reset_and_resume, false))
 	column.add_child(_button("Trocar câmera", func() -> void: camera_requested.emit(), false))
-	column.add_child(_button("Desistir…", _ask_withdraw, false))
+	if practice:
+		column.add_child(_button("Voltar ao paddock", func() -> void: return_requested.emit(), false))
+	else:
+		column.add_child(_button("Desistir…", _ask_withdraw, false))
 
 
 func _reset_and_resume() -> void:

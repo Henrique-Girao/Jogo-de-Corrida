@@ -11,7 +11,7 @@ const INITIAL_MONEY := 2500
 const PURCHASE_LIMIT := 99
 const PAINT_PRICE := 150
 const DEFAULT_SETTINGS := {
-	"sensitivity": 1.0, "assists": true, "quality": "auto", "fps": 60, "sound": true,
+	"sensitivity": 1.0, "walk_sensitivity": 1.0, "assists": true, "quality": "auto", "fps": 60, "sound": true,
 	"master_volume": 1.0, "music_volume": 0.68, "effects_volume": 0.82,
 }
 const DEFAULT_STATS := {
@@ -30,6 +30,7 @@ var money := INITIAL_MONEY
 var reputation := 0
 var cars: Array[Dictionary] = []
 var active_uid := ""
+var last_sector := "garage"
 var settings: Dictionary = DEFAULT_SETTINGS.duplicate()
 var stats: Dictionary = DEFAULT_STATS.duplicate()
 var pending_race: Dictionary = {}
@@ -62,7 +63,27 @@ func save_game() -> bool:
 	return true
 
 func active_car() -> Dictionary:
-	return _find_car(active_uid).duplicate(true)
+	return owned_car(active_uid)
+
+func owned_car(uid: String) -> Dictionary:
+	return _find_car(uid).duplicate(true)
+
+func travel_to(sector: String) -> Dictionary:
+	if not Catalog.SECTORS.has(sector):
+		return _fail("Este setor de Baía do Sal não existe.")
+	if not pending_race.is_empty():
+		return _fail("Encerre a corrida em andamento antes de viajar.")
+	if last_sector == sector:
+		return _ok("Você já está neste setor.")
+	var previous := _snapshot()
+	last_sector = sector
+	return _commit(previous, _ok("Chegada a %s." % str(Catalog.SECTORS[sector].name)))
+
+func rival_garage() -> Dictionary:
+	var lineup: Dictionary = {}
+	for id: String in Catalog.NPCS:
+		lineup[id] = Catalog.effective(_rival_car(id))
+	return lineup
 
 func select_car(uid: String) -> Dictionary:
 	if not pending_race.is_empty():
@@ -144,10 +165,10 @@ func sell(uid: String, offer_price: int = -1) -> Dictionary:
 		"price": int(quote.price), "buyer": str(quote.buyer),
 	}))
 
-func upgrade_quote(key: String) -> Dictionary:
+func upgrade_quote(key: String, uid: String = "") -> Dictionary:
 	if not Catalog.UPGRADES.has(key):
 		return _fail("Este componente não existe.")
-	var car := _find_car(active_uid)
+	var car := _find_car(active_uid if uid.is_empty() else uid)
 	if car.is_empty() or bool(car.get("loaner", false)):
 		return _fail("A oficina só prepara carros próprios.")
 	if not pending_race.is_empty():
@@ -162,12 +183,12 @@ func upgrade_quote(key: String) -> Dictionary:
 	var message := ("Instalar por Cr %d." if can_afford else "Saldo insuficiente. Preço Cr %d.") % price
 	return {"ok": can_afford, "message": message, "level": current, "cost": price, "spec": Catalog.effective(update)}
 
-func upgrade(key: String) -> Dictionary:
-	var quote := upgrade_quote(key)
+func upgrade(key: String, uid: String = "") -> Dictionary:
+	var quote := upgrade_quote(key, uid)
 	if not quote.ok:
 		return quote
 	var previous := _snapshot()
-	var car := _find_car(active_uid)
+	var car := _find_car(active_uid if uid.is_empty() else uid)
 	car.upgrades[key] = int(quote.level) + 1
 	car.cost_basis = int(car.get("cost_basis", 0)) + int(quote.cost)
 	money -= int(quote.cost)
@@ -176,12 +197,12 @@ func upgrade(key: String) -> Dictionary:
 		"level": int(car.upgrades[key]), "cost": int(quote.cost),
 	}))
 
-func paint(color: String) -> Dictionary:
+func paint(color: String, uid: String = "") -> Dictionary:
 	if not pending_race.is_empty():
 		return _fail("A oficina reabre ao encerrar sua corrida.")
 	if not Color.html_is_valid(color):
 		return _fail("Selecione uma cor válida.")
-	var car := _find_car(active_uid)
+	var car := _find_car(active_uid if uid.is_empty() else uid)
 	if car.is_empty() or bool(car.get("loaner", false)):
 		return _fail("A pintura só está disponível em carros próprios.")
 	var hex := "#" + Color.html(color).to_html(false).to_upper()
@@ -199,7 +220,7 @@ func set_setting(key: String, value: Variant) -> Dictionary:
 		return _fail("Configuração desconhecida.")
 	var previous := _snapshot()
 	match key:
-		"sensitivity":
+		"sensitivity", "walk_sensitivity":
 			settings[key] = clampf(float(value), 0.55, 1.55)
 		"quality":
 			var quality := str(value)
@@ -621,6 +642,7 @@ func _reset() -> void:
 	reputation = 0
 	cars.clear()
 	active_uid = ""
+	last_sector = "garage"
 	settings = DEFAULT_SETTINGS.duplicate()
 	settings.fps = 30 if OS.has_feature("mobile") else 60
 	stats = DEFAULT_STATS.duplicate()
@@ -638,7 +660,7 @@ func _reset() -> void:
 func _snapshot() -> Dictionary:
 	return {
 		"version": 1, "money": money, "reputation": reputation, "cars": cars.duplicate(true),
-		"active_uid": active_uid, "settings": settings.duplicate(), "stats": stats.duplicate(),
+		"active_uid": active_uid, "last_sector": last_sector, "settings": settings.duplicate(), "stats": stats.duplicate(),
 		"pending_race": pending_race.duplicate(true), "last_race": last_race.duplicate(true), "records": records.duplicate(true),
 		"championship": championship.duplicate(true), "market_epoch": _market_epoch,
 		"sequence": _sequence, "rival_cars": _rival_cars.duplicate(true),
@@ -648,6 +670,8 @@ func _apply(payload: Dictionary) -> void:
 	money = maxi(0, int(payload.get("money", INITIAL_MONEY)))
 	reputation = maxi(0, int(payload.get("reputation", 0)))
 	active_uid = str(payload.get("active_uid", ""))
+	var sector := str(payload.get("last_sector", "garage"))
+	last_sector = sector if Catalog.SECTORS.has(sector) else "garage"
 	settings = DEFAULT_SETTINGS.duplicate()
 	settings.fps = 30 if OS.has_feature("mobile") else 60
 	var stored_settings := _dictionary(payload.get("settings", {}))

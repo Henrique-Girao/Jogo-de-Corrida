@@ -1,24 +1,27 @@
 # Asfalto de Troca
 
-**Versão 0.1.0 · Android · 3D · single-player offline**
+**Versão 0.2.0 · Android · 3D · single-player offline**
 
-[Baixar o APK para Android](https://raw.githubusercontent.com/Henrique-Girao/Jogo-de-Corrida/e351e15ade9dbe4ecd9c399ccc2920c51ecac063/Asfalto-de-Troca.apk) · [Release v0.1.0](https://github.com/Henrique-Girao/Jogo-de-Corrida/releases/tag/v0.1.0)
+[Baixar o APK para Android na release v0.2.0](https://github.com/Henrique-Girao/Jogo-de-Corrida/releases/tag/v0.2.0)
 
-Baía do Sal é uma cidade portuária fictícia. Você começa na Oficina Ribeira com um **Brasa 1.6** e **Cr 2.500**. Corra no calendário oficial, prepare o carro, negocie com os entusiastas do porto ou desafie um rival pelas chaves dele. Cada atividade oferece um caminho para ampliar a garagem.
+Baía do Sal é uma cidade portuária fictícia. Você começa na Oficina Ribeira com um **Brasa 1.6** e **Cr 2.500**. Explore os quatro setores a pé e vá até os carros, pilotos, bancadas ou guichês para interagir. Procure o terminal de **Saída** em cada setor para viajar.
 
 ## Como jogar
 
-- **Garagem** — selecione um veículo, arraste sobre a vitrine para girar a câmera, instale peças ou altere a cor.
-- **Competições** — corra no Autódromo Candeia, no Cais Ferrugem e na Serra da Lua. O calendário inclui circuito, sprint, contrarrelógio, arrancada, regras de categoria e a Copa da Orla em três etapas.
-- **Encontro** — conheça os pilotos no Porto da Vigília. Antes de confirmar um duelo, confira a quantia ou o veículo em jogo. No Pink Slip, a vitória transfere o carro do rival para sua garagem. Derrota ou abandono transfere o seu. Se sua garagem ficar vazia, a revenda fornece um carro emprestado para as provas oficiais.
-- **Comércio** — compare preços de concessionária e particulares, faça contrapropostas, venda ou ofereça um carro como parte do pagamento. A oferta muda conforme a reputação, os resultados e as preferências de cada NPC.
-- **Desafios** — acompanhe metas opcionais da coleção, das provas e do comércio.
+- **Oficina Ribeira** — percorra as vagas da sua coleção, inspecione um carro e escolha qual usar. A mecânica instala peças e a pintura mostra a prévia na carroceria estacionada. O anexo abre conforme a coleção cresce, até 99 carros. O quadro da garagem acompanha as metas opcionais.
+- **Porto da Vigília** — encontre os 12 pilotos ao lado dos carros deles. Fale com cada um para ver os duelos disponíveis. No Pink Slip, a vitória transfere o carro do rival para a sua garagem. Derrota ou abandono transfere o seu. Se a garagem ficar vazia, a revenda empresta um carro para as provas oficiais.
+- **Paddock Candeia** — aproxime-se do guichê de uma prova para conferir regras e se inscrever. Há guichês próprios para a Copa da Orla. O posto de treino livre dá acesso às três pistas para dirigir sem classificação ou prêmio.
+- **Revenda do Cais** — examine os veículos anunciados no pátio. Negocie junto ao carro e, com particulares, ofereça um veículo próprio como parte do pagamento. Procure o balcão de avaliação para vender. Os anúncios acompanham a reputação e a rotação do mercado.
 
-São **10 carros fictícios**, **12 NPCs**, **11 eventos** e **10 tipos de peça** com dois níveis cada. Tração dianteira, traseira e integral, aderência, peso e potência alteram a condução. O jogo salva automaticamente as transações, os resultados e as configurações. Uma corrida interrompida reinicia na largada com a inscrição e a aposta preservadas. Todos os créditos e veículos são fictícios.
+São **10 modelos de carro**, **12 pilotos**, **11 eventos** e **10 tipos de peça** com dois níveis cada. Tração, aderência, peso e potência alteram a condução. O jogo salva automaticamente o setor atual, transações, resultados e configurações. Ao terminar uma prova ou sair do treino, você volta ao ponto de partida no setor. Uma corrida interrompida reinicia na largada com a inscrição e a aposta preservadas. Todos os créditos e veículos são fictícios.
 
 | Ação | Android | Desktop |
 | --- | --- | --- |
-| Direção | Setas na esquerda | A/D ou ←/→ |
+| Andar | Direcional esquerdo | WASD ou setas |
+| Olhar a pé | Arrastar o lado direito | Arrastar com o botão direito |
+| Interagir | Botão que aparece ao se aproximar | E ou clique |
+| Configurações | Engrenagem ou Voltar | Engrenagem ou Esc |
+| Direção na pista | Setas na esquerda | A/D ou ←/→ |
 | Aceleração | Gás | W ou ↑ |
 | Freio e ré | Freio | S ou ↓ |
 | Freio de mão | Mão | Espaço |
@@ -37,7 +40,7 @@ godot --path .
 godot --path . -- --touch-controls
 ```
 
-O último comando exibe os botões de toque no desktop para testes. O save fica em `user://asfalto_de_troca.json`, com backup local. No Linux, o diretório padrão é `~/.local/share/godot/app_userdata/Asfalto de Troca/`.
+O último comando exibe os controles de toque no desktop para testes. O save fica em `user://asfalto_de_troca.json`, com backup local. No Linux, o diretório padrão é `~/.local/share/godot/app_userdata/Asfalto de Troca/`. Saves da versão 0.1.0 mantêm o progresso e iniciam a exploração na Oficina Ribeira.
 
 ## Exportar o APK
 
@@ -68,15 +71,16 @@ Godot e Unity atendem ao Android. O Godot foi escolhido porque o editor nativo j
 | --- | --- |
 | `src/main.gd` | Transição entre setores e corrida, entrada e liquidação, áudio e pausa de aplicativo |
 | `src/domain/` | Catálogo orientado a dados, negociação, coleção, tuning, classificação, reserva de apostas e persistência |
-| `src/race/` | Eventos, física simcade a 60 Hz, IA, checkpoints, câmera e resultados |
+| `src/world/` | Mapas exploráveis, personagem a pé, câmera, colisões e interações por proximidade |
+| `src/race/` | Eventos, treino livre, física simcade a 60 Hz, IA, checkpoints, câmera e resultados |
 | `src/tracks/` | Traçados amostrados, altura, curvatura, minimapa e cenário 3D por perfil gráfico |
-| `src/art/` | Carros procedurais com dois níveis de detalhe, pintura, animação de rodas e ambientes de exposição |
-| `src/ui/` | Menus e HUD, controles multitoque e configurações |
+| `src/art/` | Carros procedurais para estacionamento e corrida, pintura e animação de rodas |
+| `src/ui/` | Diálogos contextuais, HUDs, controles multitoque e configurações |
 | `src/audio/` | Mixagem, motor dinâmico e gerador dos recursos sonoros originais |
 | `assets/` | Ícone e recursos de áudio prontos para exportação |
 | `tests/` | Verificações reproduzíveis de domínio, corrida e fluxo integrado |
 
-Os cenários e veículos são gerados por código. As malhas de carros são reutilizadas e os objetos estáticos das pistas são agrupados por área para descarte à distância. A qualidade reduz densidade, sombras e detalhe do terreno. A opção de 30 ou 60 FPS configura o limite de renderização. A simulação mantém 60 Hz. Os recursos audiovisuais foram criados para o projeto. A fonte DejaVu acompanha sua licença em `src/ui/fonts/LICENSE-DejaVu.txt`.
+Os cenários e veículos são gerados por código. Apenas o setor em uso fica carregado. As malhas de carros são reutilizadas, as rodas estacionadas são instanciadas em conjunto e objetos distantes ficam fora da renderização. A qualidade gráfica ajusta a distância de exibição dos carros nos setores, além da densidade, das sombras e do detalhe do terreno nas pistas. A opção de 30 ou 60 FPS configura o limite de renderização. A simulação mantém 60 Hz. Os recursos audiovisuais foram criados para o projeto. A fonte DejaVu acompanha sua licença em `src/ui/fonts/LICENSE-DejaVu.txt`.
 
 ## Verificação e continuidade
 
@@ -86,10 +90,10 @@ godot --headless --path . --script res://tests/domain_smoke.gd
 godot --headless --path . --script res://tests/race_simulation.gd
 XDG_DATA_HOME="$(mktemp -d)" godot --headless --path . \
   --script res://tests/game_smoke.gd --fixed-fps 60 -- --touch-controls
+XDG_DATA_HOME="$(mktemp -d)" godot --headless --path . \
+  --script res://tests/exploration_smoke.gd --fixed-fps 60 -- --touch-controls
 ```
 
-Os testes cobrem negociações e trocas, tuning, recuperação de garagem e save, inscrições, apostas, física de corrida, troca de marchas, pausa, abandono e pagamento após uma corrida aberta pelo menu. Garagem, calendário, corrida e pausa foram conferidos no desktop com renderização OpenGL.
+Os testes cobrem a garagem com 99 carros, colisão ao caminhar, prévia e aplicação de pintura, NPCs e seus carros, negociação no pátio, treino livre e o fluxo de uma corrida. O teste de ponta a ponta anda até a saída, viaja ao paddock, chega ao guichê por toque, completa a arrancada e volta ao mesmo ponto com o prêmio salvo. Os quatro setores foram conferidos no desktop com renderização OpenGL.
 
-A distribuição inclui um APK com assinatura de teste. A assinatura v2/v3, o alinhamento e a leitura do conteúdo exportado passaram nas verificações de pacote. O Android 11 emulado (API 30, x86-64) confirmou a instalação e iniciou a atividade do jogo. A interface do sistema do emulador parou de responder antes da inspeção da garagem.
-
-Esta versão é a primeira entrega jogável. A próxima etapa é medir estabilidade, tempos de carregamento e FPS em aparelhos Android físicos de entrada e intermediários, depois ajustar qualidade e balanceamento com playtests prolongados.
+A distribuição inclui um APK com assinatura de teste. A validação da versão 0.2.0 em aparelhos Android físicos e as medições de desempenho continuam pendentes.
