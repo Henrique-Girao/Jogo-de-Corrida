@@ -2,7 +2,7 @@
 
 **Versão 0.1.0 · Android · 3D · single-player offline**
 
-[Baixar o APK para Android](https://github.com/Henrique-Girao/Jogo-de-Corrida/releases/download/v0.1.0/Asfalto-de-Troca.apk)
+[Baixar o APK para Android](https://raw.githubusercontent.com/Henrique-Girao/Jogo-de-Corrida/e351e15ade9dbe4ecd9c399ccc2920c51ecac063/Asfalto-de-Troca.apk) · [Release v0.1.0](https://github.com/Henrique-Girao/Jogo-de-Corrida/releases/tag/v0.1.0)
 
 Baía do Sal é uma cidade portuária fictícia. Você começa na Oficina Ribeira com um **Brasa 1.6** e **Cr 2.500**. Corra no calendário oficial, prepare o carro, negocie com os entusiastas do porto ou desafie um rival pelas chaves dele. Cada atividade oferece um caminho para ampliar a garagem.
 
