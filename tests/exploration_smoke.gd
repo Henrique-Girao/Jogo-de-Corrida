@@ -173,8 +173,7 @@ func _open(kind: String, key: String, distance: float = 1.35) -> bool:
 
 func _material_color(uid: String) -> Color:
 	var model: Node3D = _world.sector.fleet[uid]
-	var body: MeshInstance3D = model.get_meta("body")
-	return body.get_surface_override_material(0).albedo_color
+	return CarArt.paint_tint(model)
 
 
 func _wait_frames(count: int) -> void:

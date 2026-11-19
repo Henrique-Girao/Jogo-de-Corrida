@@ -7,8 +7,8 @@ signal interact_pressed
 signal settings_pressed
 
 const Ui = preload("res://src/ui/ui_kit.gd")
-const INK := Color(0.05, 0.08, 0.10, 0.91)
-const STROKE := Color(0.24, 0.32, 0.34, 0.92)
+const INK := Color(0.066, 0.100, 0.105, 0.89)
+const STROKE := Color(0.36, 0.45, 0.44, 0.85)
 const JOYSTICK_RADIUS := 55.0
 
 var action_button: Button
@@ -28,6 +28,7 @@ var _command_finger := -1
 var _command_button: Button
 var _mouse_looking := false
 var _move_vector := Vector2.ZERO
+var _card_style := Ui.box(INK, STROKE, 1, 9)
 
 
 func _ready() -> void:
@@ -192,43 +193,46 @@ func _set_stick(value: Vector2) -> void:
 func _draw() -> void:
 	if _blocked or size.x < 100:
 		return
-	var label_width := maxf(211, Ui.DISPLAY.get_string_size(_sector_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 29).x + 37)
-	_card(Rect2(24, 24, label_width, 72), Ui.ACID)
-	_text(Vector2(42, 50), "BAÍA DO SAL", 12, Ui.ACID, Ui.MONO)
-	_text(Vector2(41, 80), _sector_name, 29, Ui.PAPER, Ui.DISPLAY)
+	var label_width := maxf(204, Ui.DISPLAY.get_string_size(_sector_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 27).x + 45)
+	_card(Rect2(24, 24, label_width, 65))
+	draw_line(Vector2(34, 41), Vector2(34, 72), Ui.ACID, 2.0, true)
+	_text(Vector2(45, 46), "BAÍA DO SAL", 11, Ui.MUTE, Ui.MONO)
+	_text(Vector2(44, 73), _sector_name, 27, Ui.PAPER, Ui.DISPLAY)
 	var credits := Ui.money(_money)
 	var account_width := maxf(205, Ui.DISPLAY.get_string_size(credits, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x + 112)
 	var at := Vector2(size.x - 93 - account_width, 26)
-	_card(Rect2(at, Vector2(account_width, 54)), STROKE)
+	_card(Rect2(at, Vector2(account_width, 54)))
+	var divider := at + Vector2(account_width - 86, 12)
+	draw_line(divider, divider + Vector2(0, 30), STROKE, 1.0, true)
 	_text(at + Vector2(12, 20), "CAIXA", 10, Ui.MUTE, Ui.MONO)
 	_text(at + Vector2(12, 43), credits, 22, Ui.PAPER, Ui.DISPLAY)
 	_text(at + Vector2(account_width - 74, 20), "RESPEITO", 10, Ui.MUTE, Ui.MONO)
 	_text(at + Vector2(account_width - 74, 43), "%03d" % _rep, 20, Ui.ACID, Ui.DISPLAY)
 
 	if show_touch:
-		draw_circle(stick_center, JOYSTICK_RADIUS + 5.0, Color(0.045, 0.073, 0.079, 0.74), true, -1, true)
-		draw_circle(stick_center, JOYSTICK_RADIUS + 5.0, STROKE.lightened(0.14), false, 1.5, true)
+		draw_circle(stick_center, JOYSTICK_RADIUS + 3.0, Color(0.053, 0.081, 0.086, 0.69), true, -1, true)
+		draw_circle(stick_center, JOYSTICK_RADIUS + 3.0, STROKE, false, 1.5, true)
+		for direction in [Vector2.UP, Vector2.RIGHT, Vector2.DOWN, Vector2.LEFT]:
+			draw_line(stick_center + direction * 44.0, stick_center + direction * 49.0, Ui.MUTE, 1.3, true)
 		var thumb := stick_center + _move_vector * JOYSTICK_RADIUS * 0.67
-		draw_circle(thumb, 23, Ui.ACID if _move_vector.length_squared() > 0.01 else Color(0.38, 0.47, 0.45, 0.8), true, -1, true)
+		draw_circle(thumb, 21, Ui.ACID if _move_vector.length_squared() > 0.01 else Color(0.42, 0.50, 0.47, 0.85), true, -1, true)
 		_text(stick_center + Vector2(-21, 82), "MOVER", 13, Ui.PAPER, Ui.MONO)
 		if _target_title.is_empty():
 			_text(Vector2(size.x - 224, size.y - 41), "ARRASTE PARA OLHAR", 14, Ui.PAPER, Ui.MONO)
 	else:
 		var instructions := "WASD OU SETAS  ·  ANDAR     BOTÃO DIREITO  ·  OLHAR"
 		var width := Ui.MONO.get_string_size(instructions, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 26.0
-		_card(Rect2(24, size.y - 64, width, 40), STROKE)
+		_card(Rect2(24, size.y - 64, width, 40))
 		_text(Vector2(37, size.y - 39), instructions, 13, Ui.PAPER, Ui.MONO)
 
 	if not _target_title.is_empty():
-		var target_box := Rect2(size.x - 294, size.y - 139, 269, 44)
-		_card(target_box, STROKE)
-		_text(target_box.position + Vector2(14, 28), _target_title, 17, Ui.PAPER, Ui.BODY, 242)
+		var target_box := Rect2(size.x - 294, size.y - 137, 269, 40)
+		_card(target_box)
+		_text(target_box.position + Vector2(14, 26), _target_title, 17, Ui.PAPER, Ui.BODY, 242)
 
 
-func _card(rect: Rect2, edge: Color) -> void:
-	draw_rect(rect, INK)
-	draw_rect(rect, edge, false, 1.0)
-	draw_rect(Rect2(rect.position, Vector2(24, 2)), edge)
+func _card(rect: Rect2) -> void:
+	draw_style_box(_card_style, rect)
 
 
 func _text(at: Vector2, words: String, font_size: int, tint: Color, font: Font, width: int = -1) -> void:

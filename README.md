@@ -1,10 +1,18 @@
 # Asfalto de Troca
 
-**Versão 0.2.0 · Android · 3D · single-player offline**
+**Versão 0.3.0 · Android · 3D · single-player offline**
 
-[Baixar o APK para Android na release v0.2.0](https://github.com/Henrique-Girao/Jogo-de-Corrida/releases/tag/v0.2.0)
+[Baixar o APK para Android na release v0.3.0](https://github.com/Henrique-Girao/Jogo-de-Corrida/releases/tag/v0.3.0)
 
 Baía do Sal é uma cidade portuária fictícia. Você começa na Oficina Ribeira com um **Brasa 1.6** e **Cr 2.500**. Explore os quatro setores a pé e vá até os carros, pilotos, bancadas ou guichês para interagir. Procure o terminal de **Saída** em cada setor para viajar.
+
+## Arte da versão 0.3.0
+
+- Cada carro tem perfil de carroceria, acabamento, vidros e rodas próprios. A pintura usa reflexos estilizados que acompanham os ângulos da carroceria.
+- Os doze pilotos têm proporções, roupas e cortes de cabelo definidos individualmente. O personagem do jogador usa a mesma estrutura de animação, com articulação nos joelhos para o passo.
+- Os quatro setores receberam sinalização, materiais e peças específicas. A oficina tem iluminação quente sobre a bancada, o porto tem água e guindastes treliçados, o paddock tem uma arquibancada com setores e a revenda tem vitrines e bases de exposição.
+- O Autódromo Candeia tem luz diurna e boxes revistos. O Cais Ferrugem usa tons frios de fim de tarde e luzes quentes junto à pista. Na Serra da Lua, a vegetação e os taludes acompanham as curvas.
+- Os painéis de exploração e corrida usam a mesma paleta. Os botões deixam o centro da tela livre.
 
 ## Como jogar
 
@@ -74,13 +82,13 @@ Godot e Unity atendem ao Android. O Godot foi escolhido porque o editor nativo j
 | `src/world/` | Mapas exploráveis, personagem a pé, câmera, colisões e interações por proximidade |
 | `src/race/` | Eventos, treino livre, física simcade a 60 Hz, IA, checkpoints, câmera e resultados |
 | `src/tracks/` | Traçados amostrados, altura, curvatura, minimapa e cenário 3D por perfil gráfico |
-| `src/art/` | Carros procedurais para estacionamento e corrida, pintura e animação de rodas |
+| `src/art/` | Carrocerias procedurais, formas reaproveitáveis, texturas de superfície e shaders de pintura, céu e água |
 | `src/ui/` | Diálogos contextuais, HUDs, controles multitoque e configurações |
 | `src/audio/` | Mixagem, motor dinâmico e gerador dos recursos sonoros originais |
 | `assets/` | Ícone e recursos de áudio prontos para exportação |
 | `tests/` | Verificações reproduzíveis de domínio, corrida e fluxo integrado |
 
-Os cenários e veículos são gerados por código. Apenas o setor em uso fica carregado. As malhas de carros são reutilizadas, as rodas estacionadas são instanciadas em conjunto e objetos distantes ficam fora da renderização. A qualidade gráfica ajusta a distância de exibição dos carros nos setores, além da densidade, das sombras e do detalhe do terreno nas pistas. A opção de 30 ou 60 FPS configura o limite de renderização. A simulação mantém 60 Hz. Os recursos audiovisuais foram criados para o projeto. A fonte DejaVu acompanha sua licença em `src/ui/fonts/LICENSE-DejaVu.txt`.
+Os cenários e veículos são gerados por código. Apenas o setor em uso fica carregado. As malhas de carros e as texturas são reutilizadas. Rodas estacionadas e peças repetidas são agrupadas em instâncias, com descarte por distância. Céu e água usam materiais próprios em OpenGL ES 3.0. A qualidade gráfica ajusta a distância de exibição dos carros nos setores, além da densidade, das sombras e do detalhe do terreno nas pistas. O perfil Alto ativa MSAA 2×, assim como o Automático no desktop. A opção de 30 ou 60 FPS configura o limite de renderização. A simulação mantém 60 Hz. Os recursos audiovisuais foram criados para o projeto. A fonte DejaVu acompanha sua licença em `src/ui/fonts/LICENSE-DejaVu.txt`.
 
 ## Verificação e continuidade
 
@@ -96,4 +104,4 @@ XDG_DATA_HOME="$(mktemp -d)" godot --headless --path . \
 
 Os testes cobrem a garagem com 99 carros, colisão ao caminhar, prévia e aplicação de pintura, NPCs e seus carros, negociação no pátio, treino livre e o fluxo de uma corrida. O teste de ponta a ponta anda até a saída, viaja ao paddock, chega ao guichê por toque, completa a arrancada e volta ao mesmo ponto com o prêmio salvo. Os quatro setores foram conferidos no desktop com renderização OpenGL.
 
-A distribuição inclui um APK com assinatura de teste. A validação da versão 0.2.0 em aparelhos Android físicos e as medições de desempenho continuam pendentes.
+A distribuição inclui um APK com assinatura de teste. A validação da versão 0.3.0 em aparelhos Android físicos e as medições de desempenho continuam pendentes.

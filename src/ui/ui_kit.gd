@@ -1,15 +1,15 @@
 extends RefCounted
 
-const INK := Color("#0c1016")
-const SHELL := Color("#101720")
-const PANEL := Color("#18212c")
-const PANEL_HIGH := Color("#222d3a")
-const EDGE := Color("#334150")
-const PAPER := Color("#f6f1df")
-const MUTE := Color("#a8b3bd")
-const ACID := Color("#daf655")
-const SOFT_ACID := Color("#263225")
-const GOLD := Color("#ffc66e")
+const INK := Color("#11181b")
+const SHELL := Color("#152024")
+const PANEL := Color("#1d2a2e")
+const PANEL_HIGH := Color("#28383b")
+const EDGE := Color("#47595a")
+const PAPER := Color("#f4eddb")
+const MUTE := Color("#afbfbc")
+const ACID := Color("#dae690")
+const SOFT_ACID := Color("#303b2c")
+const GOLD := Color("#efbd83")
 const FAIL := Color("#ff9b94")
 
 const BODY = preload("res://src/ui/fonts/DejaVuSansCondensed.ttf")
@@ -61,13 +61,14 @@ static func box(fill: Color, border: Color = Color.TRANSPARENT, width: int = 0, 
 	style.content_margin_right = h_pad
 	style.content_margin_top = v_pad
 	style.content_margin_bottom = v_pad
-	style.anti_aliasing = false
+	style.anti_aliasing = radius > 0
+	style.anti_aliasing_size = 1.0
 	return style
 
 
 static func panel(fill: Color = PANEL, border: Color = EDGE, h_pad: int = 16, v_pad: int = 12) -> PanelContainer:
 	var node := PanelContainer.new()
-	node.add_theme_stylebox_override("panel", box(fill, border, 1, 6, h_pad, v_pad))
+	node.add_theme_stylebox_override("panel", box(fill, border, 1, 9, h_pad, v_pad))
 	return node
 
 
@@ -101,10 +102,10 @@ static func button(content: String, primary: bool = false, height: int = 44) -> 
 	if primary:
 		for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
 			node.add_theme_color_override(state, INK)
-		node.add_theme_stylebox_override("normal", box(ACID, ACID, 1, 4, 13, 8))
-		node.add_theme_stylebox_override("hover", box(Color("#efff9a"), Color("#efff9a"), 1, 4, 13, 8))
-		node.add_theme_stylebox_override("pressed", box(Color("#abc73a"), ACID, 1, 4, 13, 8))
-		node.add_theme_stylebox_override("focus", box(Color.TRANSPARENT, PAPER, 2, 4))
+		node.add_theme_stylebox_override("normal", box(ACID, ACID, 1, 8, 13, 8))
+		node.add_theme_stylebox_override("hover", box(Color("#ebf2b5"), Color("#ebf2b5"), 1, 8, 13, 8))
+		node.add_theme_stylebox_override("pressed", box(Color("#b0bd71"), ACID, 1, 8, 13, 8))
+		node.add_theme_stylebox_override("focus", box(Color.TRANSPARENT, PAPER, 2, 8))
 	return node
 
 
@@ -166,6 +167,8 @@ class Glyph extends Control:
 
 	func _ready() -> void:
 		mouse_filter = MOUSE_FILTER_IGNORE
+		resized.connect(queue_redraw)
+		visibility_changed.connect(queue_redraw)
 
 	func _draw() -> void:
 		var s := minf(size.x, size.y) / 24.0

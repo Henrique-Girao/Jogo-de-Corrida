@@ -8,14 +8,13 @@ signal withdraw_requested
 signal return_requested
 signal retry_requested
 
-const INK := Color(0.042, 0.063, 0.066, 0.92)
-const LINE := Color(0.22, 0.28, 0.25)
-const PAPER := Color(0.95, 0.95, 0.88)
-const MUTED := Color(0.69, 0.75, 0.69)
-const ACCENT := Color(0.82, 0.99, 0.32)
-const HOT := Color(1.0, 0.42, 0.29)
-const HUD_FONT = preload("res://src/ui/fonts/DejaVuSansCondensed.ttf")
-const HUD_NUMBERS = preload("res://src/ui/fonts/DejaVuSansMono.ttf")
+const Ui = preload("res://src/ui/ui_kit.gd")
+const INK := Color(0.066, 0.100, 0.105, 0.87)
+const LINE := Color(0.36, 0.45, 0.44, 0.85)
+const PAPER := Ui.PAPER
+const MUTED := Ui.MUTE
+const ACCENT := Ui.ACID
+const HOT := Color("#f1a08a")
 const MODE_NAMES := {
 	"circuit": "CIRCUITO",
 	"sprint": "SPRINT",
@@ -37,8 +36,13 @@ var paused := false
 var finished := false
 var confirming_withdrawal := false
 var show_touch := false
-var text_font: Font = HUD_FONT
-var number_font: Font = HUD_NUMBERS
+var text_font: Font = Ui.BODY
+var number_font: Font = Ui.MONO
+var _panel_styles: Dictionary = {}
+var _pedal := Ui.box(Color(0.066, 0.10, 0.105, 0.70), LINE, 1, 13)
+var _pedal_primary := Ui.box(Color(0.13, 0.17, 0.13, 0.80), ACCENT, 1, 13)
+var _pedal_down := Ui.box(PAPER, PAPER, 1, 13)
+var _pedal_primary_down := Ui.box(ACCENT, ACCENT, 1, 13)
 
 
 func configure(race_ticket: Dictionary, outline: PackedVector2Array) -> void:
@@ -148,18 +152,19 @@ func _draw() -> void:
 
 	var event: Dictionary = ticket.get("event", {})
 	var mode: String = telemetry.get("mode", event.get("mode", "circuit"))
-	_panel(Rect2(24, 22, 315, 102))
-	_txt(Vector2(38, 47), MODE_NAMES.get(mode, mode.to_upper()), 14, ACCENT, number_font)
-	_txt(Vector2(38, 74), str(event.get("name", "Corrida")), 24)
+	_panel(Rect2(24, 24, 302, 95))
+	draw_line(Vector2(33, 44), Vector2(33, 75), ACCENT, 2.0, true)
+	_txt(Vector2(44, 46), MODE_NAMES.get(mode, mode.to_upper()), 12, ACCENT, number_font)
+	_txt(Vector2(43, 74), str(event.get("name", "Corrida")), 23, PAPER, Ui.DISPLAY)
 	if mode == "practice":
-		_txt(Vector2(39, 105), "PISTA ABERTA", 17, MUTED, number_font)
+		_txt(Vector2(44, 102), "PISTA ABERTA", 14, MUTED, number_font)
 	elif mode == "time_trial":
-		_txt(Vector2(39, 105), "META   " + _clock(int(telemetry.get("target_ms", event.get("target_ms", 0)))), 17, MUTED, number_font)
+		_txt(Vector2(44, 102), "META   " + _clock(int(telemetry.get("target_ms", event.get("target_ms", 0)))), 14, MUTED, number_font)
 	else:
 		var status := "POS %02d/%02d" % [int(telemetry.get("position", 1)), int(telemetry.get("field_size", 1))]
 		if mode in ["circuit", "championship"]:
 			status += "     VOLTA %d/%d" % [int(telemetry.get("lap", 1)), int(telemetry.get("laps", 1))]
-		_txt(Vector2(39, 105), status, 17, MUTED, number_font)
+		_txt(Vector2(44, 102), status, 14, MUTED, number_font)
 	if int(telemetry.get("heat_total", 1)) > 1:
 		_panel(Rect2(24, 134, 185, 40))
 		_txt(Vector2(38, 160), "ETAPA  %d/%d" % [int(telemetry.get("heat", 1)), int(telemetry.get("heat_total", 1))], 16, PAPER, number_font)
@@ -173,30 +178,33 @@ func _draw() -> void:
 		_txt(Vector2(right + 14, 46), "TEMPO", 13, MUTED, number_font)
 		_txt(Vector2(right + 14, 75), _clock(int(telemetry.get("time_ms", 0))), 25, PAPER, number_font)
 	if not course.is_empty():
-		_draw_map(Vector2(size.x - 178.0, 108.0))
+		_draw_map(Vector2(size.x - 160.0, 104.0))
 
 	if mode != "practice":
 		var progress := clampf(float(telemetry.get("progress", 0.0)), 0.0, 1.0)
 		var progress_width := minf(300.0, size.x * 0.24)
 		var progress_origin := Vector2((size.x - progress_width) * 0.5, 28.0)
-		draw_rect(Rect2(progress_origin, Vector2(progress_width, 4.0)), INK)
-		draw_rect(Rect2(progress_origin, Vector2(progress_width * progress, 4.0)), ACCENT)
+		draw_line(progress_origin, progress_origin + Vector2(progress_width, 0), INK, 4.0, true)
+		if progress > 0.0:
+			draw_line(progress_origin, progress_origin + Vector2(progress_width * progress, 0), ACCENT, 3.0, true)
 
 	var bottom := size.y - 118.0
 	var d := Vector2(size.x * 0.5 - 115, bottom)
-	_panel(Rect2(d, Vector2(230, 94)))
+	_panel(Rect2(d + Vector2(0, 3), Vector2(230, 91)))
 	var speed := int(roundf(absf(float(telemetry.get("speed_kmh", 0)))))
-	_txt(d + Vector2(14, 63), "%03d" % speed, 47, PAPER, number_font)
-	_txt(d + Vector2(112, 53), "KM/H", 13, MUTED, number_font)
+	_txt(d + Vector2(14, 64), "%03d" % speed, 46, PAPER, number_font)
+	_txt(d + Vector2(108, 58), "KM/H", 12, MUTED, number_font)
 	var gear := int(telemetry.get("gear", 0))
 	var gear_label := "R" if gear < 0 else ("N" if gear == 0 else str(gear))
-	_txt(d + Vector2(188, 62), gear_label, 32, ACCENT, number_font)
+	draw_line(d + Vector2(161, 22), d + Vector2(161, 64), LINE, 1.0, true)
+	_txt(d + Vector2(181, 31), "MARCHA", 9, MUTED, number_font)
+	_txt(d + Vector2(189, 64), gear_label, 30, ACCENT, number_font)
 	var rpm := clampf(float(telemetry.get("rpm", 0.0)), 0.0, 1.0)
-	for step in range(20):
+	for step in 20:
 		var meter_color := LINE
 		if float(step) / 20.0 < rpm:
 			meter_color = HOT if step >= 17 else ACCENT
-		draw_rect(Rect2(d + Vector2(14 + step * 10.2, 76), Vector2(8, 5)), meter_color)
+		draw_rect(Rect2(d + Vector2(15 + step * 10.1, 77), Vector2(7.7, 4)), meter_color)
 	if mode == "drag" and bool(telemetry.get("shift_hint", false)):
 		_center_tag("TROQUE A MARCHA", bottom - 11.0, ACCENT)
 
@@ -204,8 +212,11 @@ func _draw() -> void:
 	if countdown >= 0:
 		var countdown_label := str(countdown) if countdown > 0 else "VAI!"
 		var mid := Vector2(size.x * 0.5, size.y * 0.48)
-		_panel(Rect2(mid - Vector2(103, 66), Vector2(206, 132)), ACCENT)
-		_center_text(countdown_label, mid.y + 27.0, 82, ACCENT, number_font)
+		draw_circle(mid, 63.0, INK, true, -1.0, true)
+		draw_arc(mid, 63.0, 0, TAU, 56, LINE, 1.4, true)
+		var arc := float(4 - countdown) / 4.0
+		draw_arc(mid, 63.0, -PI * 0.5, -PI * 0.5 + TAU * arc, 48, ACCENT, 2.0, true)
+		_center_text(countdown_label, mid.y + 19.0, 57 if countdown > 0 else 43, ACCENT, Ui.DISPLAY)
 	elif mode != "practice" and bool(telemetry.get("wrong_way", false)):
 		_center_tag("SENTIDO CONTRÁRIO", 139.0, HOT)
 	elif bool(telemetry.get("off_track", false)):
@@ -220,49 +231,52 @@ func _draw() -> void:
 
 
 func _draw_map(at: Vector2) -> void:
-	_panel(Rect2(at, Vector2(152.0, 146.0)))
-	var origin := at + Vector2(15, 12)
-	var scale_map := 122.0
+	_panel(Rect2(at, Vector2(134.0, 129.0)))
+	var origin := at + Vector2(13, 11)
+	var scale_map := 107.0
 	var points := PackedVector2Array()
 	for point in course:
 		points.append(origin + point * scale_map)
 	if points.size() < 2:
 		return
-	draw_polyline(points, LINE.lightened(0.22), 5.5, true)
-	draw_polyline(points, MUTED, 1.5, true)
-	draw_circle(points[0], 3.5, PAPER, true, -1, true)
+	draw_polyline(points, LINE, 4.6, true)
+	draw_polyline(points, MUTED, 1.35, true)
+	draw_circle(points[0], 3.0, PAPER, true, -1, true)
 	for point in telemetry.get("map_rivals", PackedVector2Array()):
 		draw_circle(origin + point * scale_map, 3.4, HOT, true, -1, true)
 	var player: Vector2 = telemetry.get("map_position", course[0])
-	draw_circle(origin + player * scale_map, 5.5, ACCENT, true, -1, true)
+	draw_circle(origin + player * scale_map, 4.9, ACCENT, true, -1, true)
 
 
 func _draw_touch(mode: String) -> void:
-	var labels := {"left": "‹", "right": "›", "brake": "FREIO", "aux": "↑ MARCHA" if mode == "drag" else "MÃO", "throttle": "GÁS"}
+	var labels := {"brake": "FREIO", "aux": "MARCHA" if mode == "drag" else "MÃO", "throttle": "GÁS"}
 	var pressed := touches.values()
 	for key in TOUCH_KEYS:
 		var zone: Rect2 = touch_zones[key]
 		var on := pressed.has(key)
 		var primary: bool = key == "throttle"
-		var fill := INK
-		var edge := ACCENT if primary else MUTED.darkened(0.42)
-		var ink_color := ACCENT if primary else PAPER
-		if on:
-			fill = ACCENT if primary else PAPER
-			ink_color = INK
-		draw_rect(zone, fill)
-		draw_rect(zone, edge, false, 1.5)
-		var font_size := 46 if key in ["left", "right"] else (27 if primary else 13)
+		var style := (_pedal_primary_down if on else _pedal_primary) if primary else (_pedal_down if on else _pedal)
+		var ink_color := Ui.INK if on else (ACCENT if primary else PAPER)
+		draw_style_box(style, zone.grow(-3.0))
+		if key in ["left", "right"]:
+			var direction := -1.0 if key == "left" else 1.0
+			var center := zone.get_center()
+			draw_polyline(PackedVector2Array([
+				center + Vector2(-direction * 6, -12), center + Vector2(direction * 6, 0),
+				center + Vector2(-direction * 6, 12),
+			]), ink_color, 2.4, true)
+			continue
+		var font_size := 20 if primary else 13
 		var word: String = labels[key]
-		var word_width := text_font.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+		var word_width := Ui.DISPLAY.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 		var baseline := zone.get_center() + Vector2(-word_width * 0.5, font_size * 0.34)
-		_txt(baseline, word, font_size, ink_color)
+		_txt(baseline, word, font_size, ink_color, Ui.DISPLAY)
 
 
 func _panel(rect: Rect2, edge: Color = LINE) -> void:
-	draw_rect(rect, INK)
-	draw_rect(rect, edge, false, 1.0)
-	draw_rect(Rect2(rect.position, Vector2(18, 2)), edge)
+	if not _panel_styles.has(edge):
+		_panel_styles[edge] = Ui.box(INK, edge, 1, 9)
+	draw_style_box(_panel_styles[edge], rect)
 
 
 func _txt(at: Vector2, value: String, font_size: int, color: Color = PAPER, font: Font = null) -> void:
@@ -436,9 +450,4 @@ func _button(label: String, action: Callable, primary: bool) -> Button:
 
 
 func _style(fill: Color, edge: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = fill
-	style.set_border_width_all(1)
-	style.border_color = edge
-	style.set_content_margin_all(11)
-	return style
+	return Ui.box(fill, edge, 1, 9, 11, 11)

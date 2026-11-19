@@ -84,7 +84,23 @@ const PROFILES := {
 	}
 }
 
+const FINISH = preload("res://src/art/shaders/finish.gdshader")
+const COACHWORK := {
+	"brasa_16": {"fold": 0.090, "crown": 0.041, "hood": 0.008, "trim": "molding", "alloy": Color("#a6aeb0"), "spoke": 0.114, "sheen": 0.39},
+	"linha_rs": {"fold": 0.105, "crown": 0.045, "hood": 0.024, "trim": "rocker", "alloy": Color("#b9c2c4"), "spoke": 0.069, "sheen": 0.52},
+	"monte_gt": {"fold": 0.113, "crown": 0.054, "hood": 0.016, "trim": "belt", "alloy": Color("#c0c4bd"), "spoke": 0.078, "sheen": 0.56},
+	"vetra_x": {"fold": 0.087, "crown": 0.038, "hood": 0.031, "trim": "chin", "alloy": Color("#697779"), "spoke": 0.13, "sheen": 0.52},
+	"fenda_30": {"fold": 0.074, "crown": 0.036, "hood": 0.005, "trim": "knife", "alloy": Color("#938c81"), "spoke": 0.118, "sheen": 0.57},
+	"trovao_68": {"fold": 0.120, "crown": 0.053, "hood": 0.069, "trim": "chrome", "alloy": Color("#b6a999"), "spoke": 0.14, "sheen": 0.49},
+	"iris_22": {"fold": 0.107, "crown": 0.052, "hood": 0.029, "trim": "wing", "alloy": Color("#9faab2"), "spoke": 0.075, "sheen": 0.60},
+	"alvor_72": {"fold": 0.127, "crown": 0.065, "hood": 0.014, "trim": "classic", "alloy": Color("#d1c4ac"), "spoke": 0.19, "sheen": 0.57},
+	"vektor_v8": {"fold": 0.118, "crown": 0.056, "hood": 0.026, "trim": "duct", "alloy": Color("#a6bac3"), "spoke": 0.060, "sheen": 0.68},
+	"miragem_r": {"fold": 0.087, "crown": 0.029, "hood": 0.003, "trim": "scoop", "alloy": Color("#78868c"), "spoke": 0.092, "sheen": 0.67},
+}
+
 const STATIONS := [-0.5, -0.46, -0.33, -0.17, 0.02, 0.20, 0.35, 0.46, 0.5]
+const WINDOW_STATIONS := [0.0, 0.068, 0.27, 0.50, 0.73, 0.932, 1.0]
+const WINDOW_HEIGHTS := [0.0, 0.075, 0.907, 1.0]
 const INK := Color("#1b2229")
 const GRILLE := Color("#0e141a")
 const RUBBER := Color("#242a31")
@@ -97,14 +113,14 @@ const REAR := Color("#ff344c")
 static var _body_cache: Dictionary = {}
 static var _wheel_cache: Dictionary = {}
 static var _trim_mat: StandardMaterial3D
-static var _glass_mat: StandardMaterial3D
+static var _glass_mat: ShaderMaterial
 static var _wheel_mat: StandardMaterial3D
 static var _head_mat: StandardMaterial3D
 
 
 static func create(spec: Dictionary, quality: int = 1, parked: bool = false) -> Node3D:
 	var model := _model_id(spec)
-	var profile: Dictionary = PROFILES[model]
+	var profile: Dictionary = PROFILES[model].merged(COACHWORK[model])
 	var color := _color(spec.get("color", profile.paint), Color(profile.paint))
 	var detail := int(quality > 0)
 	var key := "%s:%d" % [model, detail]
@@ -114,13 +130,13 @@ static func create(spec: Dictionary, quality: int = 1, parked: bool = false) -> 
 		_wheel_cache[key] = _make_wheel(profile, detail)
 	if _trim_mat == null:
 		_trim_mat = _material(Color.WHITE, 0.75, 0.14)
-		_glass_mat = _material(Color.WHITE, 0.24, 0.29)
-		_wheel_mat = _material(Color.WHITE, 0.67, 0.22)
-		_head_mat = _material(Color.WHITE, 0.25, 0.05, HEAD, 0.40)
+		_glass_mat = _finish(Color("#3e5058"), 0.20, 0.73, 1.0)
+		_wheel_mat = _material(Color.WHITE, 0.57, 0.28)
+		_head_mat = _material(Color.WHITE, 0.32, 0.05, HEAD, 0.29)
 
 	var car := Node3D.new()
 	car.name = "Carro"
-	var paint := _material(color, 0.36, 0.24)
+	var paint := _finish(color, 0.54 - float(profile.sheen) * 0.41, float(profile.sheen))
 	var tail := _material(Color.WHITE, 0.30, 0.03, REAR, 0.18)
 	var body := _instance(_body_cache[key])
 	body.name = "Carroceria"
@@ -143,7 +159,7 @@ static func create(spec: Dictionary, quality: int = 1, parked: bool = false) -> 
 	var wheel_index := 0
 	for axle in [axles.x, axles.y]:
 		for side in [-1.0, 1.0]:
-			var center := Vector3(side * (size.x * 0.492 - wheel.y * 0.25), wheel.x, axle * size.z)
+			var center := Vector3(side * (size.x * 0.485 - wheel.y * 0.45), wheel.x, axle * size.z)
 			var heading := PI if side < 0.0 else 0.0
 			if parked:
 				tires.set_instance_transform(wheel_index, Transform3D(Basis(Vector3.UP, heading), center))
@@ -180,9 +196,26 @@ static func dimensions(spec: Dictionary) -> Vector3:
 
 
 static func set_paint(car: Node3D, tint: Color) -> void:
+	_paint_finish(car).set_shader_parameter("tint", tint)
+
+
+static func paint_tint(car: Node3D) -> Color:
+	return _paint_finish(car).get_shader_parameter("tint")
+
+
+static func _paint_finish(car: Node3D) -> ShaderMaterial:
 	var body := car.get_meta("body") as MeshInstance3D
-	var paint := body.get_surface_override_material(0) as StandardMaterial3D
-	paint.albedo_color = tint
+	return body.get_surface_override_material(0) as ShaderMaterial
+
+
+static func _finish(tint: Color, roughness: float, sheen: float, glass: float = 0.0) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = FINISH
+	material.set_shader_parameter("tint", tint)
+	material.set_shader_parameter("coat_roughness", roughness)
+	material.set_shader_parameter("sheen", sheen)
+	material.set_shader_parameter("glass", glass)
+	return material
 
 
 static func _model_id(spec: Dictionary) -> String:
@@ -261,6 +294,17 @@ static func _quad(surface: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: V
 	_tri(surface, a, c, d, out, tint)
 
 
+static func _smooth_band(surface: SurfaceTool, points: Array[Vector3], high: Vector3, low: Vector3, tint: Color) -> void:
+	var normals: Array[Vector3] = [high, high, low, low]
+	for tri in [Vector3i(0, 1, 2), Vector3i(0, 2, 3)]:
+		var normal := (points[tri.y] - points[tri.x]).cross(points[tri.z] - points[tri.x])
+		var indices: Vector3i = Vector3i(tri.x, tri.z, tri.y) if normal.dot(high + low) > 0.0 else tri
+		for index in [indices.x, indices.y, indices.z]:
+			surface.set_normal(normals[index])
+			surface.set_color(tint)
+			surface.add_vertex(points[index])
+
+
 static func _value(profile: Dictionary, key: String, at: float) -> float:
 	var values: Array = profile[key]
 	for i in range(1, STATIONS.size()):
@@ -290,12 +334,36 @@ static func _make_body(profile: Dictionary, detail: int) -> ArrayMesh:
 	var tail := _surface()
 	_chassis(profile, paint, trim, detail)
 	_cockpit(profile, paint, trim, glass, detail)
-	_fascias(profile, trim, lights, tail, detail)
+	_fascias(profile, paint, trim, lights, tail, detail)
+	_finish_details(profile, paint, trim, detail)
 	var mesh := ArrayMesh.new()
 	for surface: SurfaceTool in [paint, trim, glass, lights, tail]:
 		surface.index()
 		surface.commit(mesh)
 	return mesh
+
+
+static func _quarter(profile: Dictionary, at: float, side: float) -> Array[Vector3]:
+	var size: Vector3 = profile.size
+	var width := _value(profile, "width", at) * size.x * 0.5
+	var deck := _value(profile, "deck", at)
+	var opening := _lower(profile, at)
+	var fender := maxf(0.0, opening + 0.063 - deck)
+	var outer_deck := deck + fender
+	var lower := minf(opening, outer_deck - 0.039)
+	var fold := minf(float(profile.fold), maxf(0.03, (outer_deck - lower) * 0.53))
+	var shoulder := maxf(lower + 0.023, outer_deck - fold)
+	var ridge: float = float(profile.hood) * smoothstep(-0.50, -0.35, at) * (1.0 - smoothstep(-0.19, -0.07, at))
+	var crown: float = profile.crown
+	var z := at * size.z
+	return [
+		Vector3(0, deck + crown + ridge, z),
+		Vector3(side * width * 0.69, deck + crown * 0.50 + ridge * 0.23 + fender * 0.50, z),
+		Vector3(side * width * 0.93, outer_deck - 0.012, z),
+		Vector3(side * width, shoulder, z),
+		Vector3(side * width * 0.978, lerpf(lower, shoulder, 0.42), z),
+		Vector3(side * width * 0.92, lower, z),
+	]
 
 
 static func _chassis(profile: Dictionary, paint: SurfaceTool, trim: SurfaceTool, detail: int) -> void:
@@ -312,42 +380,32 @@ static func _chassis(profile: Dictionary, paint: SurfaceTool, trim: SurfaceTool,
 		for step in range(resolution + 1):
 			outline.append(axle - cos(float(step) * PI / resolution) * opening)
 	outline.sort()
+	var warm_white := Color("#f6f5f2")
+	var shade_colors := [Color.WHITE, warm_white, Color("#efeff0"), Color("#e2e3e6"), Color("#c4c9cf")]
+	var gap := 0.00015
 	for i in range(outline.size() - 1):
 		var z0 := outline[i]
 		var z1 := outline[i + 1]
-		var width0 := _value(profile, "width", z0) * size.x * 0.5
-		var width1 := _value(profile, "width", z1) * size.x * 0.5
-		var top0 := _value(profile, "deck", z0)
-		var top1 := _value(profile, "deck", z1)
-		var bottom0 := minf(_lower(profile, z0), top0 - 0.035)
-		var bottom1 := minf(_lower(profile, z1), top1 - 0.035)
-		var belt0 := maxf(top0 - 0.13, bottom0 + 0.018)
-		var belt1 := maxf(top1 - 0.13, bottom1 + 0.018)
-		var actual0 := z0 * size.z
-		var actual1 := z1 * size.z
+		if z1 - z0 < gap:
+			continue
 		for side in [-1.0, 1.0]:
-			var a := Vector3(side * width0 * 0.97, top0, actual0)
-			var b := Vector3(side * width1 * 0.97, top1, actual1)
-			var c := Vector3(side * width0, belt0, actual0)
-			var d := Vector3(side * width1, belt1, actual1)
-			var e := Vector3(side * width0 * 0.94, bottom0, actual0)
-			var f := Vector3(side * width1 * 0.94, bottom1, actual1)
 			var outward := Vector3(side, 0, 0)
-			_quad(paint, a, b, d, c, outward, Color("#e5e7e9"))
-			_quad(paint, c, d, f, e, outward, Color("#a3a9ad"))
-			_quad(paint, a, Vector3(0, top0 + 0.049, actual0), Vector3(0, top1 + 0.049, actual1), b, Vector3.UP, Color.WHITE)
-			if detail > 0 and (bottom0 > 0.24 or bottom1 > 0.24):
-				_quad(trim, e, f, f - outward * 0.055, e - outward * 0.055, Vector3.DOWN, INK)
+			var a := _quarter(profile, z0, side)
+			var b := _quarter(profile, z1, side)
+			var normals := [Vector3.UP, Vector3(side * 0.12, 0.99, 0).normalized(),
+				Vector3(side * 0.57, 0.82, 0).normalized(), Vector3(side, 0.15, 0).normalized(),
+				Vector3(side, -0.12, 0).normalized(), Vector3(side * 0.86, -0.49, 0).normalized()]
+			for band in 5:
+				_smooth_band(paint, [a[band], b[band], b[band + 1], a[band + 1]], normals[band], normals[band + 1], shade_colors[band])
+			if a[5].y > 0.24 or b[5].y > 0.24:
+				_quad(trim, a[5], b[5], b[5] - outward * 0.066, a[5] - outward * 0.066, Vector3.DOWN, INK)
 	for end in [-1.0, 1.0]:
-		var at: float = end * 0.5
-		var w := _value(profile, "width", at) * size.x * 0.5
-		var top := _value(profile, "deck", at)
-		var z := at * size.z
 		var out := Vector3(0.0, 0.0, end)
-		var mid := Vector3(0.0, top + 0.049, z)
 		for side in [-1.0, 1.0]:
-			_quad(paint, mid, Vector3(side * w * 0.97, top, z), Vector3(side * w, top - 0.13, z), Vector3(0, top - 0.13, z), out, Color("#e6e7eb"))
-			_quad(paint, Vector3(0, top - 0.13, z), Vector3(side * w, top - 0.13, z), Vector3(side * w * 0.94, 0.195, z), Vector3(0, 0.195, z), out, Color("#c5c9ce"))
+			var face := _quarter(profile, end * 0.5, side)
+			var toe := Vector3(0.0, face[5].y, face[5].z)
+			for band in 5:
+				_tri(paint, toe, face[band], face[band + 1], out, Color("#e1e1e2"))
 	_box(trim, Vector3(0, 0.213, 0), Vector3(size.x * 0.60, 0.17, size.z * 0.91), GRILLE)
 	if detail > 0:
 		for side in [-1.0, 1.0]:
@@ -358,22 +416,67 @@ static func _chassis(profile: Dictionary, paint: SurfaceTool, trim: SurfaceTool,
 			_box(trim, Vector3(side * handle_x, handle_height, handle_z), Vector3(0.025, 0.025, 0.112), INK)
 
 
+static func _finish_details(profile: Dictionary, paint: SurfaceTool, trim: SurfaceTool, detail: int) -> void:
+	var size: Vector3 = profile.size
+	var character: String = profile.trim
+	var rear_y := _value(profile, "deck", 0.5)
+	var front_y := _value(profile, "deck", -0.5)
+	var nose := -size.z * 0.5
+	var tail := size.z * 0.5
+	var rocker_tint := Color("#30373a")
+	for side in [-1.0, 1.0]:
+		var out := Vector3(side, 0, 0)
+		match character:
+			"molding", "belt", "classic":
+				var stripe := INK if character == "molding" else METAL
+				var height := 0.028 if character == "molding" else 0.015
+				var band := 4 if character == "molding" else 3
+				var last := _quarter(profile, -0.203, side)[band] + out * 0.013
+				for station in [-0.10, 0.02, 0.12, 0.205]:
+					var next := _quarter(profile, station, side)[band] + out * 0.013
+					_quad(trim, last, next, next + Vector3.UP * height, last + Vector3.UP * height, out, stripe)
+					last = next
+			"rocker", "chin", "knife", "wing", "duct", "scoop":
+				var a := Vector3(side * size.x * 0.439, 0.20, -size.z * 0.185)
+				var b := Vector3(side * size.x * 0.474, 0.236, size.z * 0.19)
+				var c := Vector3(side * size.x * 0.465, 0.296, size.z * 0.18)
+				var d := Vector3(side * size.x * 0.434, 0.266, -size.z * 0.173)
+				_quad(trim, a, b, c, d, out, rocker_tint)
+		if character in ["chin", "duct", "scoop"]:
+			var x: float = side * size.x * 0.325
+			var low := front_y - 0.281
+			var position := Vector3(x, low, nose - 0.013)
+			var opening := size.x * (0.18 if character == "scoop" else 0.22)
+			_lamp_slash(trim, position, side, opening, 0.135, -1.0, GRILLE)
+			_lamp_slash(paint, position - Vector3(0, 0.022, 0.007), side, opening * 0.93, 0.020, -1.0, Color("#bac1c7"))
+	if character == "chrome":
+		_box(trim, Vector3(0, front_y - 0.274, nose - 0.013), Vector3(size.x * 0.79, 0.046, 0.055), METAL)
+		_box(trim, Vector3(0, rear_y - 0.325, tail + 0.019), Vector3(size.x * 0.82, 0.048, 0.061), METAL)
+	elif character == "scoop":
+		_box(trim, Vector3(0, rear_y - 0.110, tail + 0.014), Vector3(size.x * 0.72, 0.091, 0.024), GRILLE)
+		_box(trim, Vector3(0, rear_y - 0.335, tail + 0.014), Vector3(size.x * 0.63, 0.086, 0.072), rocker_tint)
+	var plate := Vector3(0.0, maxf(0.306, rear_y - 0.290), tail + 0.023)
+	_box(trim, plate, Vector3(size.x * 0.216, 0.103, 0.017), INK)
+	if detail > 0:
+		_box(trim, plate + Vector3(0, 0.004, 0.012), Vector3(size.x * 0.192, 0.068, 0.007), Color("#c5c8ba"))
+
+
 static func _cockpit(profile: Dictionary, paint: SurfaceTool, trim: SurfaceTool, glass: SurfaceTool, detail: int) -> void:
 	var size: Vector3 = profile.size
 	var cabin: Vector4 = profile.cabin
 	var roof_width: float = profile.roof_width
 	var sections: Array[Vector3] = [
-		Vector3(_value(profile, "width", cabin.x) * size.x * 0.43, _value(profile, "deck", cabin.x) + 0.034, cabin.x * size.z),
+		Vector3(_value(profile, "width", cabin.x) * size.x * 0.43, _value(profile, "deck", cabin.x) - 0.009, cabin.x * size.z),
 		Vector3(size.x * roof_width * 0.5, size.y - 0.044, cabin.y * size.z),
 		Vector3(size.x * roof_width * 0.49, size.y - 0.056, cabin.z * size.z),
-		Vector3(_value(profile, "width", cabin.w) * size.x * 0.435, _value(profile, "deck", cabin.w) + 0.036, cabin.w * size.z)
+		Vector3(_value(profile, "width", cabin.w) * size.x * 0.435, _value(profile, "deck", cabin.w) - 0.009, cabin.w * size.z)
 	]
 	var front := sections[0]
 	var brow := sections[1]
 	var crown := sections[2]
 	var back := sections[3]
-	_inset(glass, paint, _mirror(front), front, brow, _mirror(brow), Vector3(0.0, 0.7, -0.7), WINDOW, 0.067, 0.07)
-	_inset(glass, paint, _mirror(crown), crown, back, _mirror(back), Vector3(0.0, 0.6, 0.8), WINDOW, 0.082, 0.081)
+	_windscreen(glass, paint, front, brow, -1.0, 0.044)
+	_windscreen(glass, paint, back, crown, 1.0, 0.050)
 	for side in [-1.0, 1.0]:
 		var lower_front := Vector3(side * front.x, front.y, front.z)
 		var upper_front := Vector3(side * brow.x, brow.y, brow.z)
@@ -405,8 +508,29 @@ static func _cockpit(profile: Dictionary, paint: SurfaceTool, trim: SurfaceTool,
 		_box(paint, Vector3(0, back.y + 0.135, size.z * 0.433), Vector3(size.x * 0.82, 0.05, 0.24), Color("#d9dce0"))
 
 
-static func _mirror(point: Vector3) -> Vector3:
-	return Vector3(-point.x, point.y, point.z)
+static func _windscreen(glass: SurfaceTool, paint: SurfaceTool, base: Vector3, roof: Vector3, direction: float, arc: float) -> void:
+	var out := Vector3(0, 0.57, direction * 0.82)
+	for column in range(WINDOW_STATIONS.size() - 1):
+		var left: float = WINDOW_STATIONS[column]
+		var right: float = WINDOW_STATIONS[column + 1]
+		for row in range(WINDOW_HEIGHTS.size() - 1):
+			var low: float = WINDOW_HEIGHTS[row]
+			var high: float = WINDOW_HEIGHTS[row + 1]
+			var pane := row == 1 and column > 0 and column < WINDOW_STATIONS.size() - 2
+			_quad(glass if pane else paint,
+				_wind_point(base, roof, left, low, direction, arc),
+				_wind_point(base, roof, right, low, direction, arc),
+				_wind_point(base, roof, right, high, direction, arc),
+				_wind_point(base, roof, left, high, direction, arc), out,
+				WINDOW if pane else Color("#edf0ed"))
+
+
+static func _wind_point(base: Vector3, roof: Vector3, across: float, uphill: float, direction: float, arc: float) -> Vector3:
+	var side := across * 2.0 - 1.0
+	var center := 1.0 - absf(side)
+	var lower := Vector3(base.x * side, base.y + 0.028 * center, base.z + direction * 0.014 * center)
+	var upper := Vector3(roof.x * side, roof.y + arc * center, roof.z)
+	return lower.lerp(upper, uphill) + Vector3(0, 0, direction * 0.032 * center * sin(uphill * PI))
 
 
 static func _inset(glass: SurfaceTool, trim: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, out: Vector3, tint: Color, inset_u: float, inset_v: float) -> void:
@@ -421,7 +545,7 @@ static func _inset(glass: SurfaceTool, trim: SurfaceTool, a: Vector3, b: Vector3
 	_quad(glass, inner_a, inner_b, inner_c, inner_d, out, tint)
 
 
-static func _fascias(profile: Dictionary, trim: SurfaceTool, front: SurfaceTool, rear: SurfaceTool, detail: int) -> void:
+static func _fascias(profile: Dictionary, paint: SurfaceTool, trim: SurfaceTool, front: SurfaceTool, rear: SurfaceTool, detail: int) -> void:
 	var size: Vector3 = profile.size
 	var nose := _value(profile, "deck", -0.5)
 	var deck := _value(profile, "deck", 0.5)
@@ -465,8 +589,8 @@ static func _fascias(profile: Dictionary, trim: SurfaceTool, front: SurfaceTool,
 			"pop":
 				_box(trim, front_center, Vector3(0.282, 0.075, 0.019), GRILLE)
 				_box(front, front_center + Vector3(0.0, -0.005, -0.016), Vector3(0.236, 0.035, 0.012), HEAD)
-				if detail > 0:
-					_box(trim, Vector3(front_center.x, _value(profile, "deck", -0.44) + 0.039, -size.z * 0.432), Vector3(0.275, 0.012, 0.24), INK)
+				_lamp_lid(profile, trim, front_center.x, 0.145, -0.458, -0.395, 0.006, INK)
+				_lamp_lid(profile, paint, front_center.x, 0.133, -0.455, -0.398, 0.009, Color("#e8eeed"))
 			_:
 				_box(trim, front_center, Vector3(0.275, 0.106, 0.019), GRILLE)
 				_box(front, front_center + Vector3(side * 0.011, 0.005, -0.013), Vector3(0.221, 0.069, 0.011), HEAD)
@@ -491,6 +615,19 @@ static func _fascias(profile: Dictionary, trim: SurfaceTool, front: SurfaceTool,
 			var exhaust := Vector3(side * rear_x * 0.66, 0.264, rear_z + 0.010)
 			_disc_z(trim, exhaust, 0.043, 1.0, METAL, 8)
 			_disc_z(trim, exhaust + Vector3(0, 0, 0.003), 0.027, 1.0, GRILLE, 8)
+
+
+static func _lamp_lid(profile: Dictionary, surface: SurfaceTool, x: float, width: float, start: float, end: float, lift: float, tint: Color) -> void:
+	_quad(surface, _hood_point(profile, x - width, start, lift), _hood_point(profile, x + width, start, lift),
+		_hood_point(profile, x + width, end, lift), _hood_point(profile, x - width, end, lift), Vector3.UP, tint)
+
+
+static func _hood_point(profile: Dictionary, x: float, z: float, lift: float) -> Vector3:
+	var crown := _quarter(profile, z, 1.0)
+	var first := crown[0] if absf(x) < crown[1].x else crown[1]
+	var last := crown[1] if absf(x) < crown[1].x else crown[2]
+	var y := lerpf(first.y, last.y, inverse_lerp(first.x, last.x, absf(x)))
+	return Vector3(x, y + lift, crown[0].z)
 
 
 static func _lamp_slash(surface: SurfaceTool, center: Vector3, side: float, width: float, height: float, out: float, tint: Color) -> void:
@@ -524,8 +661,10 @@ static func _make_wheel(profile: Dictionary, detail: int) -> ArrayMesh:
 	var radius := wheel.x
 	var width := wheel.y
 	var spokes: int = profile.spokes
+	var alloy: Color = profile.alloy
+	var spoke_width: float = profile.spoke
 	var surface := _surface()
-	var sides := 20 if detail > 0 else 12
+	var sides := 24 if detail > 0 else 14
 	var rings := [
 		Vector2(-width * 0.50, radius * 0.89),
 		Vector2(-width * 0.40, radius),
@@ -542,24 +681,31 @@ static func _make_wheel(profile: Dictionary, detail: int) -> ArrayMesh:
 			var out := Vector3(0, cos((a + b) * 0.5), sin((a + b) * 0.5))
 			if j >= 2:
 				out += Vector3.RIGHT
-			var shade := RUBBER if j != 1 else Color("#30343b")
+			var shade := RUBBER if j != 1 else Color("#33383b")
 			_quad(surface, _wheel_point(from, a), _wheel_point(from, b), _wheel_point(to, b), _wheel_point(to, a), out, shade)
 		var face := width * 0.523
 		var lip_a := _wheel_point(Vector2(face, radius * 0.72), a)
 		var lip_b := _wheel_point(Vector2(face, radius * 0.72), b)
 		var inner_a := _wheel_point(Vector2(face, radius * 0.644), a)
 		var inner_b := _wheel_point(Vector2(face, radius * 0.644), b)
-		_quad(surface, lip_a, lip_b, inner_b, inner_a, Vector3.RIGHT, METAL)
-		_tri(surface, Vector3(face - 0.008, 0, 0), inner_a - Vector3(0.008, 0, 0), inner_b - Vector3(0.008, 0, 0), Vector3.RIGHT, GRILLE)
+		_quad(surface, lip_a, lip_b, inner_b, inner_a, Vector3.RIGHT, alloy.lightened(0.15))
+		var barrel := Vector3(0.020, 0, 0)
+		_quad(surface, inner_a, inner_b, inner_b - barrel, inner_a - barrel, Vector3.RIGHT, alloy.darkened(0.40))
+		_tri(surface, Vector3(face - 0.020, 0, 0), inner_a - barrel, inner_b - barrel, Vector3.RIGHT, INK)
 		_tri(surface, Vector3(-width * 0.49, 0, 0), _wheel_point(rings[0], a), _wheel_point(rings[0], b), Vector3.LEFT, INK)
 		if detail > 0:
-			var hub_ring := Vector2(face + 0.006, radius * 0.179)
-			_tri(surface, Vector3(hub_ring.x, 0, 0), _wheel_point(hub_ring, a), _wheel_point(hub_ring, b), Vector3.RIGHT, Color("#7d848e"))
+			var rotor := Vector2(face - 0.015, radius * 0.51)
+			var hub_ring := Vector2(face + 0.012, radius * 0.177)
+			_tri(surface, Vector3(rotor.x, 0, 0), _wheel_point(rotor, a), _wheel_point(rotor, b), Vector3.RIGHT, Color("#535d62"))
+			_tri(surface, Vector3(hub_ring.x, 0, 0), _wheel_point(hub_ring, a), _wheel_point(hub_ring, b), Vector3.RIGHT, alloy.darkened(0.24))
 	for i in spokes:
 		var angle := TAU * i / spokes
-		var outer := Vector2(width * 0.528, radius * 0.647)
+		var outer := Vector2(width * 0.515, radius * 0.666)
 		var hub := Vector2(width * 0.54, radius * 0.125)
-		_quad(surface, _wheel_point(outer, angle - 0.077), _wheel_point(outer, angle + 0.075), _wheel_point(hub, angle + 0.32), _wheel_point(hub, angle - 0.33), Vector3.RIGHT, Color("#bec1c7"))
+		var sweep := 0.20 if spokes > 6 else 0.04
+		_quad(surface, _wheel_point(outer, angle - spoke_width), _wheel_point(outer, angle + spoke_width),
+			_wheel_point(hub, angle + sweep + 0.34), _wheel_point(hub, angle + sweep - 0.34), Vector3.RIGHT, alloy)
+	surface.index()
 	return surface.commit()
 
 

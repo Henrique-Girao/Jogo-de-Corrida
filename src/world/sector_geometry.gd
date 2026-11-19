@@ -2,30 +2,50 @@ extends Node3D
 ## Meshes and collision volumes for the walkable districts.
 
 const Ui = preload("res://src/ui/ui_kit.gd")
+const Style = preload("res://src/art/scene_style.gd")
+const Forms = preload("res://src/art/mesh_forms.gd")
 const SOLID := 1
 const STAGE := 2
-
-static var _shadow_material: StandardMaterial3D
-static var _ground_texture: ImageTexture
+static var _tire_mesh: TorusMesh
 
 var _boxes: Array[Transform3D] = []
 var _paints: Array[Color] = []
+var _beveled: Array[Transform3D] = []
+var _bevel_colors: Array[Color] = []
 var _luminous: Array[Transform3D] = []
 var _light_colors: Array[Color] = []
 var _blockers: StaticBody3D
 
 
 func box(at: Vector3, dimensions: Vector3, color: Color, solid := false, yaw := 0.0) -> void:
-	var pose := Basis(Vector3.UP, yaw)
-	_boxes.append(Transform3D(pose.scaled_local(dimensions), at))
+	_boxes.append(Transform3D(Basis(Vector3.UP, yaw).scaled_local(dimensions), at))
 	_paints.append(color)
 	if solid:
-		if not is_instance_valid(_blockers):
-			_blockers = StaticBody3D.new()
-			_blockers.collision_layer = SOLID
-			_blockers.collision_mask = 0
-			add_child(_blockers)
-		_shape(_blockers, at, dimensions, yaw)
+		_block(at, dimensions, yaw)
+
+
+func beveled(at: Vector3, dimensions: Vector3, color: Color, solid := false, yaw := 0.0) -> void:
+	_beveled.append(Transform3D(Basis(Vector3.UP, yaw).scaled_local(dimensions), at))
+	_bevel_colors.append(color)
+	if solid:
+		_block(at, dimensions, yaw)
+
+
+func beam(from: Vector3, to: Vector3, width: float, depth: float, color: Color) -> void:
+	var span := to - from
+	var up := Vector3.BACK if absf(span.normalized().y) > 0.98 else Vector3.UP
+	var basis := Basis.looking_at(span, up).scaled_local(Vector3(width, depth, span.length()))
+	_boxes.append(Transform3D(basis, (from + to) * 0.5))
+	_paints.append(color)
+
+
+func _block(at: Vector3, dimensions: Vector3, yaw: float) -> void:
+	if not is_instance_valid(_blockers):
+		_blockers = StaticBody3D.new()
+		_blockers.collision_layer = SOLID
+		_blockers.collision_mask = 0
+		add_child(_blockers)
+	_shape(_blockers, at, dimensions, yaw)
 
 
 func light_strip(at: Vector3, dimensions: Vector3, color: Color, yaw := 0.0) -> void:
@@ -34,15 +54,18 @@ func light_strip(at: Vector3, dimensions: Vector3, color: Color, yaw := 0.0) -> 
 
 
 func finish() -> void:
-	_batch(_boxes, _paints, false)
-	_batch(_luminous, _light_colors, true)
+	_batch(_boxes, _paints, BoxMesh.new())
+	_batch(_beveled, _bevel_colors, Forms.cabinet())
+	_batch(_luminous, _light_colors, BoxMesh.new(), true)
 	_boxes.clear()
 	_paints.clear()
+	_beveled.clear()
+	_bevel_colors.clear()
 	_luminous.clear()
 	_light_colors.clear()
 
 
-func surface(at: Vector3, dimensions: Vector3, color: Color) -> void:
+func surface(at: Vector3, dimensions: Vector3, color: Color, finish_name := "concrete", tile := 3.5, solid := true) -> void:
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(dimensions.x, dimensions.z)
 	var piece := MeshInstance3D.new()
@@ -51,13 +74,47 @@ func surface(at: Vector3, dimensions: Vector3, color: Color) -> void:
 	piece.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var paint := StandardMaterial3D.new()
 	paint.albedo_color = color
-	paint.albedo_texture = _texture()
-	paint.uv1_scale = Vector3(dimensions.x / 3.4, dimensions.z / 3.4, 1.0)
-	paint.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	paint.roughness = 0.92
+	paint.albedo_texture = Style.pavement(finish_name)
+	paint.uv1_scale = Vector3(dimensions.x / tile, dimensions.z / tile, 1.0)
+	paint.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	paint.roughness = 0.79 if finish_name == "slab" else 0.97
 	piece.material_override = paint
 	add_child(piece)
-	box(at - Vector3(0, 0.18, 0), Vector3(dimensions.x, 0.34, dimensions.z), color, true)
+	if solid:
+		_block(at - Vector3(0, 0.18, 0), Vector3(dimensions.x, 0.34, dimensions.z), 0.0)
+
+
+func glass(at: Vector3, dimensions: Vector3, color: Color, yaw: float) -> void:
+	var material := _paint(color)
+	material.roughness = 0.22
+	material.metallic_specular = 0.66
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var mesh := QuadMesh.new()
+	mesh.size = Vector2(dimensions.x, dimensions.y)
+	var piece := MeshInstance3D.new()
+	piece.mesh = mesh
+	piece.material_override = material
+	piece.position = at
+	piece.rotation.y = yaw
+	piece.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(piece)
+
+
+func tire(at: Vector3, tint: Color) -> void:
+	if _tire_mesh == null:
+		_tire_mesh = TorusMesh.new()
+		_tire_mesh.outer_radius = 0.397
+		_tire_mesh.inner_radius = 0.205
+		_tire_mesh.rings = 20
+		_tire_mesh.ring_segments = 8
+	var piece := MeshInstance3D.new()
+	piece.mesh = _tire_mesh
+	piece.position = at
+	piece.scale.y = 1.18
+	piece.material_override = _paint(tint)
+	piece.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(piece)
 
 
 func sign(words: String, at: Vector3, letter_scale: float, color: Color, yaw := 0.0) -> Label3D:
@@ -91,16 +148,13 @@ func cylinder(at: Vector3, radius: float, height: float, color: Color, yaw := 0.
 	return piece
 
 
-func _batch(poses: Array[Transform3D], colors: Array[Color], emissive: bool) -> void:
+func _batch(poses: Array[Transform3D], colors: Array[Color], mesh: Mesh, emissive := false) -> void:
 	if poses.is_empty():
 		return
 	var paint := _paint(Color.WHITE)
 	paint.vertex_color_use_as_albedo = true
 	if emissive:
 		paint.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3.ONE
-	mesh.material = paint
 	var batch := MultiMesh.new()
 	batch.transform_format = MultiMesh.TRANSFORM_3D
 	batch.use_colors = true
@@ -111,6 +165,7 @@ func _batch(poses: Array[Transform3D], colors: Array[Color], emissive: bool) -> 
 		batch.set_instance_color(index, colors[index])
 	var instance := MultiMeshInstance3D.new()
 	instance.multimesh = batch
+	instance.material_override = paint
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(instance)
 
@@ -122,28 +177,6 @@ static func collision_box(parent: Node3D, at: Vector3, dimensions: Vector3, yaw 
 	parent.add_child(body)
 	_shape(body, at, dimensions, yaw)
 	return body
-
-
-static func shadow(width: float, length: float) -> MeshInstance3D:
-	if not is_instance_valid(_shadow_material):
-		var image := Image.create_empty(40, 40, false, Image.FORMAT_RGBA8)
-		for y in 40:
-			for x in 40:
-				var distance := Vector2(float(x) - 19.5, float(y) - 19.5).length() / 19.5
-				image.set_pixel(x, y, Color(0.016, 0.025, 0.034, (1.0 - smoothstep(0.28, 1.0, distance)) * 0.65))
-		_shadow_material = _paint(Color.WHITE)
-		_shadow_material.albedo_texture = ImageTexture.create_from_image(image)
-		_shadow_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		_shadow_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		_shadow_material.no_depth_test = false
-		_shadow_material.texture_repeat = false
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(width, length)
-	var instance := MeshInstance3D.new()
-	instance.mesh = plane
-	instance.material_override = _shadow_material
-	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	return instance
 
 
 static func _shape(body: StaticBody3D, at: Vector3, dimensions: Vector3, yaw: float) -> void:
@@ -161,23 +194,3 @@ static func _paint(color: Color) -> StandardMaterial3D:
 	material.albedo_color = color
 	material.roughness = 0.82
 	return material
-
-
-static func _texture() -> ImageTexture:
-	if is_instance_valid(_ground_texture):
-		return _ground_texture
-	var image := Image.create_empty(96, 96, false, Image.FORMAT_RGB8)
-	var noise := FastNoiseLite.new()
-	noise.seed = 186
-	noise.frequency = 0.09
-	var random := RandomNumberGenerator.new()
-	random.seed = 218
-	for y in 96:
-		for x in 96:
-			var gray := 0.89 + noise.get_noise_2d(x, y) * 0.08 + random.randf_range(-0.055, 0.055)
-			if mini(x, y) < 2:
-				gray *= 0.79
-			image.set_pixel(x, y, Color(gray, gray, gray))
-	image.generate_mipmaps()
-	_ground_texture = ImageTexture.create_from_image(image)
-	return _ground_texture

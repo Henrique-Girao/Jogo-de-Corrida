@@ -3,6 +3,7 @@ extends Node3D
 ## All speeds are in m/s, distances in metres and angles in radians.
 
 const CarArt = preload("res://src/art/car_art.gd")
+const Style = preload("res://src/art/scene_style.gd")
 const GEAR_RATIOS: Array[float] = [0.24, 0.37, 0.51, 0.67, 0.84, 1.02]
 const BODY_RADIUS := 1.05
 
@@ -36,6 +37,7 @@ var gear_quality := 1.0
 var stopped_time := 0.0
 
 var _model: Node3D
+var _shadow: MeshInstance3D
 var _visual_pitch := 0.0
 var _visual_roll := 0.0
 var _steer_angle := 0.0
@@ -67,6 +69,10 @@ func initialize(stats: Dictionary, profile: Dictionary, quality: int) -> void:
 	_power = clampf(float(stats.get("power", 108.0)), 70.0, 1000.0)
 	_model = CarArt.create(stats, quality)
 	add_child(_model)
+	var dimensions := CarArt.dimensions(stats)
+	_shadow = Style.shadow(dimensions.x * 1.55, dimensions.z * 1.25, 0.57, true)
+	_shadow.position.y = -0.012
+	add_child(_shadow)
 
 
 func spawn_at(track, distance: float, lateral: float) -> void:
@@ -243,4 +249,5 @@ func apply_pose(road: Dictionary, delta: float) -> void:
 	var right := heading.cross(Vector3.UP).normalized()
 	var up := right.cross(heading).normalized()
 	basis = Basis(right, up, -heading)
+	_shadow.visible = not off_track
 	CarArt.set_body_lean(_model, _visual_pitch, _visual_roll, delta)

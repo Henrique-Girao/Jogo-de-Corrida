@@ -160,6 +160,9 @@ func _apply_settings() -> void:
 	audio.set_levels(master, float(settings.get("music_volume", 0.45)), float(settings.get("effects_volume", 0.80)))
 	var mobile_default := 30 if OS.has_feature("mobile") else 60
 	Engine.max_fps = int(settings.get("fps", settings.get("fps_limit", mobile_default)))
+	var quality := str(settings.get("quality", "auto"))
+	var smooth_edges := quality == "high" or (quality == "auto" and not OS.has_feature("mobile"))
+	get_viewport().msaa_3d = Viewport.MSAA_2X if smooth_edges else Viewport.MSAA_DISABLED
 
 
 func _notification(what: int) -> void:

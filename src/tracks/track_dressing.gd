@@ -1,9 +1,12 @@
 extends Node3D
 ## Procedural meshes and scenery batches. Props share a small set of instanced meshes.
 
+const Style = preload("res://src/art/scene_style.gd")
+const Forms = preload("res://src/art/mesh_forms.gd")
+const Ui = preload("res://src/ui/ui_kit.gd")
 const WHITE := Color("#eee8d7")
-const ORANGE := Color("#ed8c43")
-const CYAN := Color("#69c7c5")
+const ORANGE := Color("#dc8c55")
+const CYAN := Color("#86bcb5")
 const DIRECTIONS := Color("#203c42")
 const PROP_CELL := 144.0
 
@@ -24,7 +27,7 @@ class Surface:
 		triangle(a, b, c, color, normal)
 		triangle(a, c, d, color, normal)
 
-	func make_mesh(roughness: float) -> ArrayMesh:
+	func make_mesh(roughness: float, finish_name: String, tile: float) -> ArrayMesh:
 		var arrays := []
 		arrays.resize(Mesh.ARRAY_MAX)
 		arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -34,6 +37,14 @@ class Surface:
 		material.vertex_color_use_as_albedo = true
 		material.roughness = roughness
 		material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		if not finish_name.is_empty():
+			var texcoords := PackedVector2Array()
+			texcoords.resize(vertices.size())
+			for i in vertices.size():
+				texcoords[i] = Vector2(vertices[i].x, vertices[i].z) / tile
+			arrays[Mesh.ARRAY_TEX_UV] = texcoords
+			material.albedo_texture = Style.pavement(finish_name)
+			material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 		var mesh := ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		mesh.surface_set_material(0, material)
@@ -66,36 +77,28 @@ func build(track: Node3D, config: Dictionary) -> void:
 
 
 func _sky() -> void:
-	var sky_material := ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = _config.sky_top
-	sky_material.sky_horizon_color = _config.sky_horizon
-	sky_material.ground_horizon_color = _config.sky_horizon
-	sky_material.ground_bottom_color = _config.sky_bottom
-	sky_material.sky_curve = 0.24
-	sky_material.sun_angle_max = 11.0
-	sky_material.sun_curve = 0.14
-	var sky := Sky.new()
-	sky.sky_material = sky_material
+	var light := DirectionalLight3D.new()
+	light.rotation_degrees = _config.sun_angle
+	light.light_color = _config.sun
+	light.light_energy = _config.sun_energy
+	light.shadow_enabled = _quality == 2
+	light.directional_shadow_max_distance = 80.0
+	add_child(light)
 	var settings := Environment.new()
-	settings.background_mode = Environment.BG_SKY
-	settings.sky = sky
+	settings.background_mode = Environment.BG_COLOR
+	settings.background_color = _config.sky_horizon
+	add_child(Style.sky(_config.sky_top, _config.sky_horizon, _config.sky_bottom, _config.sun,
+		light.basis.z, _config.clouds))
 	settings.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	settings.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	settings.ambient_light_color = _config.ambient
 	settings.ambient_light_energy = _config.ambient_energy
 	settings.fog_enabled = _quality > 0
 	settings.fog_light_color = _config.fog
 	settings.fog_density = _config.fog_density
-	settings.fog_sky_affect = 0.36
 	var world := WorldEnvironment.new()
 	world.environment = settings
 	add_child(world)
-	var light := DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-28, -125, 0)
-	light.light_color = _config.sun
-	light.light_energy = _config.sun_energy
-	light.shadow_enabled = _quality == 2
-	light.directional_shadow_max_distance = 95.0
-	add_child(light)
 
 
 func _ground() -> void:
@@ -109,10 +112,13 @@ func _ground() -> void:
 	var docks: bool = _track.track_id == "docas"
 	if docks:
 		x0 = -26.0
-		surface.quad(Vector3(-540, -1.1, z0 - 190), Vector3(x0, -1.1, z0 - 190), Vector3(x0, -1.1, z1 + 190), Vector3(-540, -1.1, z1 + 190), Color("#294854"))
+		var water := Style.water(Vector2(656.0, z1 - z0 + 380.0), Color("#223944"), Color("#736f8a"), _config.sky_horizon, 380.0)
+		water.position = Vector3(x0 - 328.0, -1.10, (z0 + z1) * 0.5)
+		add_child(water)
+		_box(Vector3(x0 + 0.10, -0.23, (z0 + z1) * 0.5), Vector3(0.83, 1.4, z1 - z0), Color("#4b535c"))
 		for i in 30:
 			var z := z0 + i * (z1 - z0) / 30.0
-			_box(Vector3(x0 + 0.65, 0.12, z), Vector3(1.18, 1.58, (z1 - z0) / 30.0 - 0.35), Color("#49545b"))
+			_box(Vector3(x0 + 0.68, 0.48, z), Vector3(0.85, 0.76, (z1 - z0) / 30.0 - 0.35), Color("#52606a"))
 	var step := 30.0 if not mountain else (15.0 if _quality == 0 else 12.0)
 	var dx := ceili((x1 - x0) / step)
 	var dz := ceili((z1 - z0) / step)
@@ -136,11 +142,11 @@ func _ground() -> void:
 			var b := grid[i + 1]
 			var c := grid[i + dx + 2]
 			var d := grid[i + dx + 1]
-			var shade := clampf(0.55 + 0.20 * sin(column * 0.55 + row * 0.34) + _rng.randf_range(-0.13, 0.13), 0.12, 0.88)
+			var shade := clampf(0.50 + 0.29 * sin(column * 0.24 + row * 0.16) + 0.13 * cos(row * 0.19), 0.10, 0.90)
 			var base: Color = _config.ground_a.lerp(_config.ground_b, shade)
 			surface.triangle(a, b, c, base, (c - a).cross(b - a).normalized())
-			surface.triangle(a, c, d, base.darkened(_rng.randf_range(0.0, 0.034)), (d - a).cross(c - a).normalized())
-	_place_surface("Terreno", surface, 1.0)
+			surface.triangle(a, c, d, base, (d - a).cross(c - a).normalized())
+	_place_surface("Terreno", surface, 1.0, "concrete" if docks else "earth", 10.5)
 
 
 func _ridge_height(x: float, z: float, coarse_line: PackedVector3Array) -> float:
@@ -161,6 +167,7 @@ func _ridge_height(x: float, z: float, coarse_line: PackedVector3Array) -> float
 
 func _road() -> void:
 	var road := Surface.new()
+	var verges := Surface.new()
 	var paint := Surface.new()
 	var width: float = _track.half_width
 	var road_color: Color = _config.road
@@ -173,18 +180,18 @@ func _road() -> void:
 	for i in divisions:
 		var d := lerpf(start, end, (i + 1) / float(divisions))
 		var next := _frame(d)
-		var shade := (sin(i * 0.27) - 0.08) * 0.023
+		var shade := (sin(i * 0.12) - 0.08) * 0.021
 		_strip(road, current, next, -width, width, 0, 0, road_color.lightened(shade))
 		if not mountain and _track.mode != "drag":
-			for lane in [-1.68, 1.68]:
-				_strip(road, current, next, lane - 0.55, lane + 0.55, 0.008, 0.008, road_color.darkened(0.046 + 0.02 * sin(i * 0.19)))
+			var wear := 0.025 + 0.011 * sin(i * 0.21)
+			_strip(road, current, next, -2.30, 2.30, 0.008, 0.008, road_color.darkened(wear))
 		for side in [-1.0, 1.0]:
 			_strip(road, current, next, side * width, side * (width + 1.35), -0.01, -0.08, shoulder)
 			var verge: Color = _config.ground_a.lerp(_config.ground_b, 0.39)
 			if mountain:
-				_strip(road, current, next, side * (width + 1.35), side * (width + 10.0), -0.08, -2.65, verge)
+				_strip(verges, current, next, side * (width + 1.35), side * (width + 10.0), -0.08, -2.65, verge)
 			else:
-				_strip(road, current, next, side * (width + 1.35), side * (width + 4.4), -0.08, -1.28, verge)
+				_strip(verges, current, next, side * (width + 1.35), side * (width + 4.4), -0.08, -1.28, verge)
 			var curb: Color = _config.curb_a if i % 2 == 0 else _config.curb_b
 			if _track.mode != "drag" and _track.track_id != "serra":
 				_strip(paint, current, next, side * width, side * (width + 0.62), 0.019, 0.008, curb)
@@ -199,7 +206,8 @@ func _road() -> void:
 	_checkered(paint, finish, width)
 	if not _track.closed:
 		_line(paint, _track.start_line, _track.start_line + 0.22, -width, width, WHITE)
-	_place_surface("Asfalto", road, 0.85 if _track.track_id == "docas" else 0.98)
+	_place_surface("Asfalto", road, 0.91 if _track.track_id == "docas" else 0.98, "asphalt", 5.7)
+	_place_surface("Taludes", verges, 1.0, "concrete" if _track.track_id == "docas" else "earth", 6.2)
 	_place_surface("Sinalização horizontal", paint, 0.92)
 
 
@@ -208,9 +216,12 @@ func _strip(surface: Surface, a: Dictionary, b: Dictionary, left: float, right: 
 	var bp: Vector3 = b.position
 	var ar: Vector3 = a.right
 	var br: Vector3 = b.right
+	var normal := (ar.cross(bp - ap)).normalized()
+	if normal.y < 0.0:
+		normal = -normal
 	surface.quad(
 		ap + ar * left + Vector3.UP * y_left, ap + ar * right + Vector3.UP * y_right,
-		bp + br * right + Vector3.UP * y_right, bp + br * left + Vector3.UP * y_left, color,
+		bp + br * right + Vector3.UP * y_right, bp + br * left + Vector3.UP * y_left, color, normal,
 	)
 
 
@@ -336,8 +347,8 @@ func _road_sign(distance: float, side: float, text: String, accent: Color) -> vo
 
 
 func _speedway() -> void:
-	var graphite := Color("#495c60")
-	var panel := Color("#5e7275")
+	var graphite := Color("#526264")
+	var panel := Color("#7f9594")
 	var stand: Dictionary = _frame(56)
 	var upright := _basis(stand)
 	for row in range(5 if _quality == 0 else 8):
@@ -345,32 +356,39 @@ func _speedway() -> void:
 		var side := -15.5 - row * 1.42
 		var base: Vector3 = stand.position + stand.right * side + Vector3.UP * (0.28 + rise)
 		_box(base, Vector3(1.62, 0.53, 89), graphite, upright)
-		_box(base + Vector3.UP * 0.27, Vector3(1.15, 0.09, 87.5), ORANGE.darkened(0.24 + row * 0.049), upright)
-		if _quality != 0:
-			for slot in 27:
-				if _rng.randf() < 0.72:
-					var d := (slot - 13.0) * 3.10
-					var spectator: Vector3 = base + stand.forward * d + Vector3.UP * (0.57 + _rng.randf() * 0.16)
-					_box(spectator, Vector3(0.29, 0.49, 0.24), [WHITE, ORANGE, graphite, CYAN][slot % 4], upright)
+		_box(base + Vector3.UP * 0.27, Vector3(1.40, 0.08, 88.1), Color("#b0b0a4"), upright)
+		var seats := Color("#6b8e93") if row % 3 != 0 else Color("#a49a77")
+		for section in 5:
+			var bench: Vector3 = base + stand.forward * ((float(section) - 2.0) * 17.1) + Vector3.UP * 0.43
+			_box(bench, Vector3(0.75, 0.25, 15.6), seats, upright)
+			_box(bench - stand.right * 0.29 + Vector3.UP * 0.13, Vector3(0.15, 0.24, 15.4), seats.darkened(0.15), upright)
 	var canopy: Vector3 = stand.position + stand.right * -20.7
 	for i in 8:
 		var d := (i - 3.5) * 12.5
 		var pier: Vector3 = canopy + stand.forward * d
 		_box(pier + stand.right * -6.9 + Vector3.UP * 3.72, Vector3(0.42, 7.43, 0.45), graphite, upright)
-		_box(pier + Vector3.UP * 7.27, Vector3(14.8, 0.23, 12.0), panel, upright)
-	_box(canopy + stand.right * 6.8 + Vector3.UP * 7.29, Vector3(0.25, 0.30, 99.0), ORANGE, upright)
+		_box(pier + Vector3.UP * 7.27, Vector3(14.8, 0.19, 12.51), panel, upright)
+		_beam(pier - stand.right * 6.9 + Vector3.UP * 5.51,
+			pier + stand.right * 3.9 + Vector3.UP * 7.20, 0.22, 0.27, graphite)
+	_box(canopy + stand.right * 7.36 + Vector3.UP * 7.23, Vector3(0.23, 0.35, 100.2), ORANGE.darkened(0.16), upright)
 	var pit := _frame(47)
 	var pit_basis := _basis(pit)
 	for i in 9:
 		var p: Vector3 = pit.position + pit.right * 22.8 + pit.forward * ((i - 3.8) * 7.2)
-		_box(p + Vector3.UP * 1.8, Vector3(10.4, 4.16, 7.0), graphite, pit_basis)
-		_box(p - pit.right * 5.23 + Vector3.UP * 1.46, Vector3(0.07, 2.85, 5.7), Color("#2d393e"), pit_basis)
-		_box(p - pit.right * 5.27 + Vector3.UP * 3.10, Vector3(0.11, 0.25, 5.7), ORANGE, pit_basis)
+		_box(p + Vector3.UP * 1.8, Vector3(10.4, 4.16, 7.0), panel.darkened(0.16), pit_basis)
+		var door: Vector3 = p - pit.right * 5.23
+		_box(door + Vector3.UP * 1.47, Vector3(0.12, 2.86, 5.75), Color("#3e4e53"), pit_basis)
+		_box(door - pit.right * 0.073 + Vector3.UP * 1.63, Vector3(0.04, 2.47, 5.44), Color("#6c7a78"), pit_basis)
+		for tread in [0.65, 1.15, 1.65, 2.15, 2.65]:
+			_box(door - pit.right * 0.10 + Vector3.UP * tread, Vector3(0.022, 0.032, 5.41), graphite, pit_basis)
+		_box(door - pit.right * 0.13 + Vector3.UP * 3.07, Vector3(0.19, 0.20, 5.73), ORANGE, pit_basis)
 	_box(pit.position + pit.right * 22.8 + Vector3.UP * 3.97, Vector3(12.2, 0.35, 66.6), Color("#a4aaa0"), pit_basis)
 	var control: Vector3 = pit.position + pit.right * 34.0 + pit.forward * 15.0
 	_box(control + Vector3.UP * 5.27, Vector3(13, 11, 14), graphite, pit_basis)
-	_box(control + Vector3.UP * 11.13, Vector3(15, 1.2, 16), ORANGE.darkened(0.2), pit_basis)
-	_box(control + Vector3.UP * 9.63, Vector3(13.1, 1.7, 14.1), Color("#8ca2a4"), pit_basis)
+	_box(control + Vector3.UP * 10.95, Vector3(15.3, 0.62, 16.1), ORANGE.darkened(0.22), pit_basis)
+	_box(control + Vector3.UP * 9.63, Vector3(13.12, 1.70, 14.12), Color("#88a6af"), pit_basis)
+	for panel_z in [-5.4, -1.8, 1.8, 5.4]:
+		_box(control - pit.right * 6.61 + pit.forward * panel_z + Vector3.UP * 9.63, Vector3(0.11, 1.71, 0.083), graphite, pit_basis)
 	for d in [25.0, 98.0, 167.0, 269.0, 354.0, 449.0, 568.0, 688.0, 796.0, 936.0, 1060.0]:
 		if d < _track.length - 10:
 			_floodlight(d, 1.0 if fmod(d, 2.0) == 0.0 else -1.0, WHITE)
@@ -428,15 +446,15 @@ func _speedway_horizon() -> void:
 
 func _docks() -> void:
 	var slate := Color("#53616d")
-	var colors: Array[Color] = [Color("#9b5c45"), Color("#536e7f"), Color("#987f56"), Color("#446663"), Color("#684d58")]
+	var colors: Array[Color] = [Color("#a56d55"), Color("#5e7887"), Color("#9a8969"), Color("#4f726f"), Color("#765a67")]
 	for i in range(16 if _quality == 0 else 28):
 		var z := -31.0 + i * 13.8
 		var x := 18.0 + (i % 3) * 2.5
-		_container(Vector3(x, 1.77, z), colors[i % colors.size()], Basis.IDENTITY)
+		_container(Vector3(x, 1.645, z), colors[i % colors.size()], Basis.IDENTITY)
 		if i % 4 != 2:
-			_container(Vector3(x + 2.42, 4.22, z + 0.22), colors[(i + 2) % colors.size()], Basis.IDENTITY)
-		if i % 5 < 2 and _quality != 0:
-			_container(Vector3(x + 4.83, 6.65, z + 0.22), colors[(i + 3) % colors.size()], Basis.IDENTITY)
+			_container(Vector3(x, 4.075, z), colors[(i + 2) % colors.size()], Basis.IDENTITY)
+			if i % 5 < 2 and _quality != 0:
+				_container(Vector3(x, 6.505, z), colors[(i + 3) % colors.size()], Basis.IDENTITY)
 	var warehouse_count := 3 if _quality == 0 else 6
 	for i in warehouse_count:
 		var at := Vector3(49.0 + (i % 2) * 8.0, 0.4, 24 + i * 38.0)
@@ -444,11 +462,14 @@ func _docks() -> void:
 	for i in 4:
 		var z := 24.0 + i * 55.0
 		_dock_crane(Vector3(-19.0, 0.46, z), i)
-	_box(Vector3(-57, 0.4, 91), Vector3(29.0, 3.5, 124.0), Color("#222f3d"))
-	_box(Vector3(-57, 2.40, 91), Vector3(27.7, 1.05, 122.0), Color("#8b6956"))
-	_box(Vector3(-57, 3.47, 91), Vector3(25.5, 1.35, 117.0), slate)
+	_prop("hull", Vector3(-57.0, 0.57, 91.0), Vector3(29.0, 3.5, 124.0), Color("#2d3e4a"))
+	_prop("hull", Vector3(-57.0, 2.48, 91.0), Vector3(29.02, 0.55, 124.06), Color("#97745e"))
+	_prop("hull", Vector3(-57.0, 3.38, 91.0), Vector3(25.5, 1.38, 116.5), slate)
 	_box(Vector3(-61, 7.61, 57), Vector3(13, 9.6, 15), Color("#667587"))
 	_box(Vector3(-61, 12.26, 57), Vector3(15.2, 1.18, 16.2), Color("#8394a0"))
+	_box(Vector3(-54.43, 10.91, 57), Vector3(0.15, 1.35, 12.8), Color("#4b6474"))
+	for z in [52.0, 55.3, 58.6, 61.9]:
+		_box(Vector3(-54.30, 10.89, z), Vector3(0.18, 1.40, 0.15), slate)
 	for i in range(12 if _quality == 0 else 23):
 		var z := 33.0 + i * 5.2
 		_box(Vector3(-48.45, 3.55, z), Vector3(1.65, 0.22, 2.2), Color("#e5bb70"), Basis.IDENTITY, true)
@@ -522,16 +543,17 @@ func _clear(location: Vector3, margin: float) -> bool:
 
 
 func _container(at: Vector3, color: Color, orientation: Basis) -> void:
-	_box(at, Vector3(2.41, 2.43, 11.8), color, orientation)
+	_box(at, Vector3(2.41, 2.43, 11.8), color.darkened(0.09), orientation)
 	for side in [-1.0, 1.0]:
-		for row in [-0.97, 0.96]:
-			_box(at + orientation.x * side * 1.220 + Vector3.UP * row, Vector3(0.055, 0.11, 11.72), color.darkened(0.24), orientation)
+		for row in [-1.145, 1.145]:
+			_box(at + orientation.x * side * 1.214 + Vector3.UP * row, Vector3(0.057, 0.14, 11.76), color.darkened(0.28), orientation)
 		if _quality != 0:
-			for rib in range(6):
-				var at_rib: Vector3 = at + orientation.x * side * 1.219 + orientation.z * (-4.85 + rib * 1.93)
-				_box(at_rib, Vector3(0.086, 2.06, 0.16), color.lightened(0.16), orientation)
+			for rib in range(18):
+				var at_rib: Vector3 = at + orientation.x * side * 1.207 + orientation.z * (-5.44 + rib * 0.64)
+				_box(at_rib, Vector3(0.067, 2.13, 0.23), color.lightened(0.10), orientation)
 	_box(at - orientation.z * 5.91, Vector3(1.87, 1.88, 0.06), color.darkened(0.25), orientation)
-	_box(at - orientation.z * 5.96, Vector3(0.12, 1.77, 0.07), Color("#7a8180"), orientation)
+	for offset in [-0.32, 0.32]:
+		_box(at - orientation.z * 5.96 + orientation.x * offset, Vector3(0.036, 1.77, 0.044), Color("#88908a"), orientation)
 
 
 func _warehouse(at: Vector3, number: int, color: Color) -> void:
@@ -547,16 +569,24 @@ func _warehouse(at: Vector3, number: int, color: Color) -> void:
 
 
 func _dock_crane(at: Vector3, index: int) -> void:
-	var metal := Color("#665a5d").lightened(index * 0.05)
+	var metal := Color("#655d64").lightened(index * 0.041)
 	for z in [-5.4, 5.4]:
 		for x in [-4.8, 4.8]:
-			_box(at + Vector3(x, 10.6, z), Vector3(0.82, 21.4, 0.89), metal)
-			_box(at + Vector3(x, 0.27, z), Vector3(1.73, 0.55, 1.67), Color("#484f58"))
-		_box(at + Vector3(-10.1, 21.04, z), Vector3(35, 1.36, 0.80), metal)
-		_box(at + Vector3(-17.8, 28.1, z), Vector3(14.8, 0.76, 0.63), metal, Basis(Vector3.FORWARD, -0.55))
-		_box(at + Vector3(-27.27, 16.16, z), Vector3(0.08, 9, 0.09), Color("#3a4554"))
-	_box(at + Vector3(-28, 11.9, 0), Vector3(2.8, 0.55, 12.2), metal.lightened(0.16))
-	_box(at + Vector3(4.9, 21.82, 0), Vector3(0.60, 0.47, 12.3), ORANGE, Basis.IDENTITY, true)
+			_box(at + Vector3(x, 10.6, z), Vector3(0.66, 21.3, 0.78), metal)
+			_box(at + Vector3(x, 0.29, z), Vector3(1.70, 0.59, 1.64), Color("#515a62"))
+		_beam(at + Vector3(-4.8, 13.3, z), at + Vector3(4.8, 20.98, z), 0.30, 0.34, metal)
+		_beam(at + Vector3(4.8, 13.3, z), at + Vector3(-4.8, 20.98, z), 0.30, 0.34, metal)
+		_box(at + Vector3(-10.1, 21.17, z), Vector3(35, 0.42, 0.65), metal)
+		_box(at + Vector3(-10.1, 23.06, z), Vector3(35, 0.39, 0.56), metal)
+		for bay in 8:
+			var x := -27.55 + float(bay) * 4.36
+			_beam(at + Vector3(x, 21.19, z), at + Vector3(x + 2.18, 23.03, z), 0.22, 0.25, metal)
+			_beam(at + Vector3(x + 2.18, 23.03, z), at + Vector3(x + 4.36, 21.19, z), 0.22, 0.25, metal)
+		_box(at + Vector3(-27.27, 16.61, z), Vector3(0.075, 9.0, 0.075), Color("#3a4554"))
+	_prop("beveled", at + Vector3(-4.81, 19.55, 5.51), Vector3(2.13, 1.67, 2.11), metal.lightened(0.17))
+	_box(at + Vector3(-4.81, 19.85, 6.57), Vector3(1.55, 0.61, 0.05), Color("#637b87"))
+	_box(at + Vector3(-27.30, 12.0, 0), Vector3(2.11, 0.44, 11.27), metal.lightened(0.16))
+	_box(at + Vector3(4.9, 23.23, 0), Vector3(0.23, 0.25, 11.10), ORANGE, Basis.IDENTITY, true)
 
 
 func _mountains() -> void:
@@ -564,7 +594,7 @@ func _mountains() -> void:
 	_road_sign(47.0, 1.0, "BR-63", Color("#d0d5c3"))
 	_road_sign(_track.length * 0.45, 1.0, "KM 04", Color("#d0d5c3"))
 	_sponsor(83.0, -1.0, "SERRA DA LUA", "RESERVA DO ALTO", Color("#e9be88"))
-	var mountain_color := Color("#857780")
+	var mountain_color := Color("#838f91")
 	var bounds: Rect2 = _track.bounds()
 	var world_center := Vector3(bounds.get_center().x, 0, -bounds.get_center().y)
 	for i in range(22 if _quality == 0 else 40):
@@ -587,14 +617,19 @@ func _mountains() -> void:
 				var location: Vector3 = p + right * offset + frame.forward * wave
 				var basis := Basis(Vector3.UP, _rng.randf() * TAU)
 				var height := _rng.randf_range(1.8, 5.1)
-				var correction := clampf((absf(offset) - _track.half_width) * 0.17, 0.5, 3.0)
+				var gap := absf(offset) - float(_track.half_width)
+				var bank := lerpf(-0.08, -2.65, clampf((gap - 1.35) / 8.65, 0, 1))
+				if gap > 10.0:
+					bank = -2.10 - absf(offset) * 0.065
+				var footing := p.y + float(frame.grade) * wave + bank
 				if i == 0 or _rng.randf() > 0.57:
-					location.y += height * 0.32 - correction
-					_prop("stone", location, Vector3(height * 1.18, height * 0.69, height * 0.95), Color("#92776b").lightened(_rng.randf_range(-0.22, 0.20)), basis)
+					location.y = footing + height * 0.24
+					_prop("stone", location, Vector3(height * 1.18, height * 0.69, height * 0.95), Color("#8c8374").lightened(_rng.randf_range(-0.18, 0.16)), basis)
 				else:
-					location.y += height * 0.49 - correction
-					_prop("tree", location, Vector3(height * 0.63, height * 0.97, height * 0.69), Color("#63766c").lightened(_rng.randf_range(-0.21, 0.14)), basis)
-					_box(location - Vector3.UP * height * 0.43, Vector3(0.13, height * 0.61, 0.13), Color("#635c54"), basis)
+					location.y = footing + height * 0.64
+					var leaf := Color("#526c57").lightened(_rng.randf_range(-0.16, 0.16))
+					_prop("tree", location, Vector3(height * 0.73, height * 0.97, height * 0.72), leaf, basis)
+					_box(location - Vector3.UP * height * 0.39, Vector3(0.145, height * 0.64, 0.145), Color("#6d5d4b"), basis)
 		if steep > 0.017:
 			_chevron(distance, signf(frame.curvature))
 
@@ -604,8 +639,8 @@ func _chevron(distance: float, side: float) -> void:
 	var basis := _basis(frame)
 	var base: Vector3 = frame.position + frame.right * side * (_track.half_width + 2.4)
 	_box(base + Vector3.UP * 0.68, Vector3(0.10, 1.45, 0.09), Color("#8a8a75"), basis)
-	_box(base + Vector3.UP * 1.33, Vector3(0.94, 0.72, 0.13), Color("#e6b44f"), basis)
-	_label("›" if side < 0.0 else "‹", base + Vector3.UP * 1.39 - frame.forward * 0.08, basis, 0.020, Color("#46362d"))
+	_prop("beveled", base + Vector3.UP * 1.34, Vector3(0.98, 0.73, 0.11), Color("#cfa256"), basis)
+	_label("›" if side < 0.0 else "‹", base + Vector3.UP * 1.39 - frame.forward * 0.067, basis, 0.016, Color("#403631"))
 
 
 func _rails(spacing: int, shade: Color, both: bool) -> void:
@@ -624,8 +659,13 @@ func _rails(spacing: int, shade: Color, both: bool) -> void:
 			var axis := (a - b).normalized()
 			var right := Vector3.UP.cross(axis).normalized()
 			var basis := Basis(right, axis.cross(right).normalized(), axis)
-			_box((a + b) * 0.5, Vector3(0.12, 0.28, length + 0.05), shade, basis)
-			_box(a - Vector3.UP * 0.04, Vector3(0.14, 1.13, 0.16), shade.darkened(0.43), basis)
+			var rail := (a + b) * 0.5
+			_box(rail, Vector3(0.12, 0.25, length + 0.05), shade.darkened(0.12), basis)
+			for y in [-0.092, 0.093]:
+				_box(rail + Vector3.UP * y, Vector3(0.158, 0.064, length + 0.05), shade, basis)
+			_box(a - Vector3.UP * 0.05, Vector3(0.15, 1.01, 0.16), shade.darkened(0.37), basis)
+			if _track.track_id == "serra":
+				_box(a + Vector3.UP * 0.151, Vector3(0.19, 0.070, 0.21), Color("#bda174"), basis)
 
 
 func _floodlight(distance: float, side: float, accent: Color, docks := false) -> void:
@@ -660,12 +700,12 @@ func _basis(frame: Dictionary) -> Basis:
 	return Basis(right, Vector3.UP, right.cross(Vector3.UP)).orthonormalized()
 
 
-func _place_surface(title: String, surface: Surface, roughness: float) -> void:
+func _place_surface(title: String, surface: Surface, roughness: float, finish_name := "", tile := 1.0) -> void:
 	if surface.vertices.is_empty():
 		return
 	var shape := MeshInstance3D.new()
 	shape.name = title
-	shape.mesh = surface.make_mesh(roughness)
+	shape.mesh = surface.make_mesh(roughness, finish_name, tile)
 	if title != "Terreno" and title != "Asfalto":
 		shape.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(shape)
@@ -676,10 +716,11 @@ func _label(text: String, at: Vector3, orientation: Basis, pixels: float, shade:
 	label.text = text
 	label.position = at
 	label.basis = orientation
+	label.font = Ui.DISPLAY
 	label.font_size = 62
 	label.pixel_size = pixels
 	label.modulate = shade
-	label.outline_size = 6
+	label.outline_size = 4
 	label.outline_modulate = Color("#263238")
 	label.double_sided = false
 	label.visibility_range_end = 150.0
@@ -688,6 +729,12 @@ func _label(text: String, at: Vector3, orientation: Basis, pixels: float, shade:
 
 func _box(at: Vector3, dimensions: Vector3, shade: Color, orientation := Basis.IDENTITY, emissive := false) -> void:
 	_prop("glow" if emissive else "box", at, dimensions, shade, orientation)
+
+
+func _beam(from: Vector3, to: Vector3, width: float, depth: float, shade: Color) -> void:
+	var span := to - from
+	var up := Vector3.BACK if absf(span.normalized().y) > 0.98 else Vector3.UP
+	_box((from + to) * 0.5, Vector3(width, depth, span.length()), shade, Basis.looking_at(span, up))
 
 
 func _prop(kind: String, at: Vector3, dimensions: Vector3, shade: Color, orientation := Basis.IDENTITY) -> void:
@@ -717,6 +764,11 @@ func _flush_batches() -> void:
 				multimesh.set_instance_color(i, batch[i][1])
 			var instance := MultiMeshInstance3D.new()
 			instance.multimesh = multimesh
+			if key == "beveled":
+				var paint := StandardMaterial3D.new()
+				paint.vertex_color_use_as_albedo = true
+				paint.roughness = 0.75
+				instance.material_override = paint
 			if key in ["glow", "spill", "peak"] or _quality != 2:
 				instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(instance)
@@ -729,23 +781,38 @@ func _get_prop_mesh(key: String) -> Mesh:
 	material.roughness = 0.94
 	if key == "spill":
 		return _light_spill()
-	if key == "tree":
-		var tree := CylinderMesh.new()
-		tree.top_radius = 0.05
-		tree.bottom_radius = 0.5
-		tree.height = 1.0
-		tree.radial_segments = 6
-		tree.rings = 1
-		tree.material = material
-		return tree
-	if key == "peak" or key == "stone":
-		var stone := SphereMesh.new()
-		stone.radius = 0.5
-		stone.height = 1.0
-		stone.radial_segments = 6 if key == "peak" else 5
-		stone.rings = 3
-		stone.material = material
-		return stone
+	if key == "beveled":
+		return Forms.cabinet()
+	var rings: Array[Vector4] = []
+	match key:
+		"tree":
+			rings = [
+				Vector4(0.17, -0.50, 0.16, 0.00), Vector4(0.44, -0.32, 0.38, 0.01),
+				Vector4(0.45, -0.07, 0.40, -0.04), Vector4(0.31, 0.045, 0.32, -0.04),
+				Vector4(0.36, 0.18, 0.31, 0.047), Vector4(0.20, 0.39, 0.18, 0.042),
+				Vector4(0.06, 0.50, 0.08, 0.08),
+			]
+		"stone":
+			rings = [
+				Vector4(0.36, -0.49, 0.35, 0.045), Vector4(0.48, -0.21, 0.43, 0.018),
+				Vector4(0.37, 0.19, 0.35, -0.055), Vector4(0.235, 0.40, 0.21, -0.072),
+			]
+		"peak":
+			rings = [
+				Vector4(0.45, -0.48, 0.49, 0.0), Vector4(0.48, -0.18, 0.43, 0.0),
+				Vector4(0.34, 0.12, 0.33, -0.033), Vector4(0.21, 0.35, 0.26, -0.07),
+				Vector4(0.055, 0.50, 0.09, -0.10),
+			]
+		"hull":
+			rings = [
+				Vector4(0.38, -0.50, 0.43, 0.025), Vector4(0.46, -0.16, 0.47, 0.013),
+				Vector4(0.50, 0.31, 0.50, 0.0), Vector4(0.50, 0.50, 0.50, 0.0),
+			]
+	if not rings.is_empty():
+		var count := 8 if key in ["tree", "hull"] else 7
+		var shape := Forms.loft(rings, count, PI * 0.125, key == "hull")
+		shape.surface_set_material(0, material)
+		return shape
 	if key == "glow":
 		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var block := BoxMesh.new()
