@@ -4,3 +4,4 @@
 /export_credentials.cfg
 *.keystore
 *.jks
+/art/tools/__pycache__/

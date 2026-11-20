@@ -2,6 +2,8 @@ extends Node3D
 ## Procedural meshes and scenery batches. Props share a small set of instanced meshes.
 
 const Style = preload("res://src/art/scene_style.gd")
+const CarArt = preload("res://src/art/car_art.gd")
+const Models = preload("res://src/art/model_library.gd")
 const Forms = preload("res://src/art/mesh_forms.gd")
 const Placard = preload("res://src/art/placard.gd")
 const WHITE := Color("#eee8d7")
@@ -537,7 +539,7 @@ func _speedway_horizon() -> void:
 		var angle := i * TAU / 20.0
 		var radius := 305.0 + _rng.randf_range(18, 86)
 		var base := Vector3(108 + cos(angle) * radius, -18, 58 + sin(angle) * radius)
-		_prop("peak", base, Vector3(135, _rng.randf_range(36, 80), 150), base_hill.lightened(_rng.randf_range(-0.13, 0.12)), Basis(Vector3.UP, angle))
+		_prop("morro", base, Vector3(135, _rng.randf_range(36, 80), 150), base_hill.lightened(_rng.randf_range(-0.13, 0.12)), Basis(Vector3.UP, angle))
 	for i in range(38 if _quality == 0 else 94):
 		var a := _rng.randf_range(0.0, TAU)
 		var radius := _rng.randf_range(116, 270)
@@ -567,18 +569,7 @@ func _docks() -> void:
 		if _reserve(base, Vector2(11.6, 12.5), Basis.IDENTITY):
 			base.y = _footing(base)
 			_dock_crane(base, i)
-	_prop("hull", Vector3(-57.0, 0.57, 91.0), Vector3(29.0, 3.5, 124.0), Color("#2d3e4a"))
-	_prop("hull", Vector3(-57.0, 2.48, 91.0), Vector3(29.02, 0.55, 124.06), Color("#97745e"))
-	_prop("hull", Vector3(-57.0, 3.38, 91.0), Vector3(25.5, 1.38, 116.5), slate)
-	_box(Vector3(-61, 7.61, 57), Vector3(13, 9.6, 15), Color("#667587"))
-	_box(Vector3(-61, 12.26, 57), Vector3(15.2, 1.18, 16.2), Color("#8394a0"))
-	_box(Vector3(-54.43, 10.91, 57), Vector3(0.15, 1.35, 12.8), Color("#4b6474"))
-	for z in [52.0, 55.3, 58.6, 61.9]:
-		_box(Vector3(-54.30, 10.89, z), Vector3(0.18, 1.40, 0.15), slate)
-	for i in 9:
-		var z := 45.0 + i * 10.8
-		_box(Vector3(-47.8, 3.95, z), Vector3(0.73, 0.39, 0.77), slate.darkened(0.14))
-		_box(Vector3(-47.42, 3.99, z), Vector3(0.045, 0.16, 0.46), Color("#e5bb70"), Basis.IDENTITY, true)
+	_prop("cargueiro", Vector3(-57.0, -1.06, 91.0), Vector3(29.0, 13.1, 124.0), Color.WHITE)
 	_box(Vector3(-247.0, -0.97, 146.0), Vector3(95.0, 1.36, 570.0), slate.darkened(0.28))
 	for i in range(16 if _quality == 0 else 25):
 		var z := -120.0 + i * 22.0
@@ -615,12 +606,7 @@ func _dock_yards(colors: Array[Color]) -> void:
 			if _reserve(shed, Vector2(20.0, 32.0), upright, 3.0):
 				shed.y = _footing(shed)
 				var shell := Color("#556775").darkened((patch % 4) * 0.05)
-				_box(shed + Vector3.UP * 4.0, Vector3(18.0, 8.1, 29.0), shell, upright)
-				_box(shed + Vector3.UP * 8.13, Vector3(19.5, 0.67, 30.0), shell.darkened(0.33), upright)
-				for door in 3:
-					var entrance: Vector3 = shed + frame.forward * ((door - 1) * 8.0) - frame.right * side * 9.1
-					_box(entrance + Vector3.UP * 2.03, Vector3(0.15, 4.10, 6.10), Color("#34454d"), upright)
-					_box(entrance + Vector3.UP * 4.39, Vector3(0.24, 0.15, 5.87), Color("#f0c17d"), upright, true)
+				_prop("galpao", shed, Vector3(19.5, 8.47, 30.0), shell.lightened(0.22), upright)
 				var van: Vector3 = shed + frame.forward * 18.7 - upright.x * side * 5.5
 				if patch % 3 == 0 and _reserve(van, Vector2(2.05, 4.36), upright):
 					van.y = _footing(van)
@@ -629,17 +615,12 @@ func _dock_yards(colors: Array[Color]) -> void:
 
 
 func _service_van(at: Vector3, upright: Basis, color: Color) -> void:
-	_prop("beveled", at + Vector3.UP * 0.63, Vector3(1.82, 0.68, 4.09), color.darkened(0.12), upright)
-	_prop("beveled", at + Vector3.UP * 1.20 + upright.z * 0.25, Vector3(1.74, 1.37, 3.46), color, upright)
-	_box(at + Vector3.UP * 1.42 - upright.z * 1.46, Vector3(1.55, 0.52, 0.052), Color("#435c68"), upright)
-	_box(at + Vector3.UP * 0.50 - upright.z * 2.044, Vector3(1.71, 0.17, 0.078), Color("#354247"), upright)
-	for side in [-1.0, 1.0]:
-		_box(at + upright * Vector3(side * 0.64, 0.71, -2.044), Vector3(0.29, 0.116, 0.052), WHITE, upright)
-		for axle in [-1.26, 1.31]:
-			var wheel := Vector3(side * 0.84, 0.296, axle)
-			_prop("rim_tire", at + upright * wheel, Vector3(0.62, 0.25, 0.62), Color("#30383a"),
-				upright * Basis(Vector3.FORWARD, PI * 0.5))
-
+	var van := CarArt.create({"model": "furgao_servico", "color": color}, _quality, true)
+	van.transform = Transform3D(upright, at + Vector3.UP * 0.015)
+	var shadow := Style.shadow(2.32, 4.53, 0.63, true)
+	shadow.position.y = -0.009
+	van.add_child(shadow)
+	add_child(van)
 
 func _container_stack(at: Vector3, palette: int, colors: Array[Color], orientation: Basis, levels: int) -> void:
 	for i in levels:
@@ -648,30 +629,13 @@ func _container_stack(at: Vector3, palette: int, colors: Array[Color], orientati
 
 
 func _container(at: Vector3, color: Color, orientation: Basis) -> void:
-	_box(at, Vector3(2.41, 2.43, 11.8), color.darkened(0.09), orientation)
-	for side in [-1.0, 1.0]:
-		for row in [-1.145, 1.145]:
-			_box(at + orientation.x * side * 1.214 + Vector3.UP * row, Vector3(0.057, 0.14, 11.76), color.darkened(0.28), orientation)
-		if _quality != 0:
-			for rib in 12:
-				var at_rib: Vector3 = at + orientation.x * side * 1.207 + orientation.z * (-5.04 + rib * 0.91)
-				_box(at_rib, Vector3(0.055, 2.12, 0.22), color.lightened(0.072), orientation)
-	_box(at - orientation.z * 5.91, Vector3(1.87, 1.88, 0.06), color.darkened(0.25), orientation)
-	for offset in [-0.32, 0.32]:
-		_box(at - orientation.z * 5.96 + orientation.x * offset, Vector3(0.036, 1.77, 0.044), Color("#88908a"), orientation)
+	var local := orientation * Basis(Vector3.UP, PI * 0.5)
+	_prop("conteiner", at - Vector3.UP * 1.215, Vector3(11.8, 2.43, 2.41), color.lightened(0.28), local)
 
 
 func _warehouse(at: Vector3, number: int, color: Color) -> void:
-	var facade := color.lightened((number % 3) * 0.13)
-	_box(at + Vector3.UP * 4.4, Vector3(19, 9.0, 34), facade)
-	_box(at + Vector3.UP * 9.08, Vector3(20.2, 0.59, 35), color.darkened(0.24))
-	_box(at + Vector3(-9.56, 2.13, 0), Vector3(0.10, 4.2, 8.5), Color("#313e46"))
-	_box(at + Vector3(-9.59, 4.29, 0), Vector3(0.12, 0.12, 8.5), ORANGE, Basis.IDENTITY, true)
-	for left in range(3):
-		var d := -11.2 + left * 10.0
-		_box(at + Vector3(-9.54, 6.37, d), Vector3(0.065, 1.25, 5.2), Color("#80939e"))
-	_box(at + Vector3(-5.8, 9.72, 8.25), Vector3(2.2, 1.3, 3.25), color.lightened(0.25))
-
+	var facade := color.lightened(0.22 + (number % 3) * 0.08)
+	_prop("galpao", at, Vector3(20.2, 9.48, 35.0), facade)
 
 func _dock_crane(at: Vector3, index: int) -> void:
 	var metal := Color("#655d64").lightened(index * 0.041)
@@ -707,7 +671,7 @@ func _mountains() -> void:
 		var radius := maxf(bounds.size.x, bounds.size.y) * 0.63 + _rng.randf_range(69.0, 226.0)
 		var at := world_center + Vector3(cos(angle) * radius, -29.0, sin(angle) * radius)
 		var dimensions := Vector3(_rng.randf_range(100, 275), _rng.randf_range(68, 159), _rng.randf_range(88, 260))
-		_prop("peak", at, dimensions, mountain_color.lightened(_rng.randf_range(-0.23, 0.16)), Basis(Vector3.UP, angle))
+		_prop("morro", at, dimensions, mountain_color.lightened(_rng.randf_range(-0.23, 0.16)), Basis(Vector3.UP, angle))
 	var stride := 26 if _quality == 0 else 18
 	for distance in range(3, int(_track.length), stride):
 		var frame := _frame(distance)
@@ -727,7 +691,8 @@ func _mountains() -> void:
 					if _reserve(location, Vector2(size.x, size.z), basis, 2.3):
 						var bottom := size.y * 0.30
 						location.y = _footing(location) + bottom
-						_prop("stone", location, size, Color("#8c8374").lightened(_rng.randf_range(-0.14, 0.16)), basis)
+						var variant := "rocha_1" if (distance + i) % 2 == 0 else "rocha_2"
+						_prop(variant, location, size, Color("#8c8374").lightened(_rng.randf_range(0.13, 0.39)), basis)
 				else:
 					if _reserve(location, Vector2.ONE * height * 0.73, basis, 2.5):
 						location.y = _footing(location)
@@ -738,9 +703,8 @@ func _mountains() -> void:
 
 
 func _tree(at: Vector3, height: float, leaf: Color, basis: Basis) -> void:
-	var trunk := Vector3(height * 0.062, height * 0.45, height * 0.058)
-	_prop("trunk", at + Vector3.UP * (trunk.y * 0.5 - 0.08), trunk, Color("#6d5d4b"), basis)
-	_prop("tree", at + Vector3.UP * height * 0.79, Vector3(height * 0.73, height * 0.97, height * 0.72), leaf, basis)
+	var variant := "arvore_1" if fposmod(at.x + at.z, 2.0) < 1.0 else "arvore_2"
+	_prop(variant, at - Vector3.UP * 0.035, Vector3.ONE * height * 1.05, leaf.lightened(0.30), basis)
 
 
 func _chevron(distance: float, side: float) -> void:
@@ -898,7 +862,7 @@ func _flush_batches() -> void:
 				paint.vertex_color_use_as_albedo = true
 				paint.roughness = 0.75
 				instance.material_override = paint
-			if key in ["glow", "spill", "peak"] or _quality != 2:
+			if key in ["glow", "spill", "morro"] or _quality != 2:
 				instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(instance)
 	_batches.clear()
@@ -912,45 +876,8 @@ func _get_prop_mesh(key: String) -> Mesh:
 		return _light_spill()
 	if key == "beveled":
 		return Forms.cabinet()
-	if key in ["trunk", "rim_tire"]:
-		var cylinder := CylinderMesh.new()
-		cylinder.top_radius = 0.5
-		cylinder.bottom_radius = 0.5
-		cylinder.height = 1.0
-		cylinder.rings = 0
-		cylinder.radial_segments = 8 if key == "trunk" else 16
-		cylinder.material = material
-		return cylinder
-	var rings: Array[Vector4] = []
-	match key:
-		"tree":
-			rings = [
-				Vector4(0.17, -0.50, 0.16, 0.00), Vector4(0.44, -0.32, 0.38, 0.01),
-				Vector4(0.45, -0.07, 0.40, -0.04), Vector4(0.31, 0.045, 0.32, -0.04),
-				Vector4(0.36, 0.18, 0.31, 0.047), Vector4(0.20, 0.39, 0.18, 0.042),
-				Vector4(0.06, 0.50, 0.08, 0.08),
-			]
-		"stone":
-			rings = [
-				Vector4(0.36, -0.49, 0.35, 0.045), Vector4(0.48, -0.21, 0.43, 0.018),
-				Vector4(0.37, 0.19, 0.35, -0.055), Vector4(0.235, 0.40, 0.21, -0.072),
-			]
-		"peak":
-			rings = [
-				Vector4(0.45, -0.48, 0.49, 0.0), Vector4(0.48, -0.18, 0.43, 0.0),
-				Vector4(0.34, 0.12, 0.33, -0.033), Vector4(0.21, 0.35, 0.26, -0.07),
-				Vector4(0.055, 0.50, 0.09, -0.10),
-			]
-		"hull":
-			rings = [
-				Vector4(0.38, -0.50, 0.43, 0.025), Vector4(0.46, -0.16, 0.47, 0.013),
-				Vector4(0.50, 0.31, 0.50, 0.0), Vector4(0.50, 0.50, 0.50, 0.0),
-			]
-	if not rings.is_empty():
-		var count := 8 if key in ["tree", "hull"] else 7
-		var shape := Forms.loft(rings, count, PI * 0.125, key == "hull")
-		shape.surface_set_material(0, material)
-		return shape
+	if key in ["conteiner", "arvore_1", "arvore_2", "rocha_1", "rocha_2", "morro", "cargueiro", "galpao"]:
+		return Models.prop(key)
 	if key == "glow":
 		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var block := BoxMesh.new()

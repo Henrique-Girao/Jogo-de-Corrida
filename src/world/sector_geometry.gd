@@ -2,10 +2,10 @@ extends Node3D
 ## Meshes and collision volumes for the walkable districts.
 
 const Style = preload("res://src/art/scene_style.gd")
+const Models = preload("res://src/art/model_library.gd")
 const Forms = preload("res://src/art/mesh_forms.gd")
 const SOLID := 1
 const STAGE := 2
-static var _tire_mesh: TorusMesh
 
 var _boxes: Array[Transform3D] = []
 var _paints: Array[Color] = []
@@ -14,20 +14,21 @@ var _bevel_colors: Array[Color] = []
 var _luminous: Array[Transform3D] = []
 var _light_colors: Array[Color] = []
 var _blockers: StaticBody3D
+var _models: Dictionary = {}
 
 
 func box(at: Vector3, dimensions: Vector3, color: Color, solid := false, yaw := 0.0) -> void:
 	_boxes.append(Transform3D(Basis(Vector3.UP, yaw).scaled_local(dimensions), at))
 	_paints.append(color)
 	if solid:
-		_block(at, dimensions, yaw)
+		block(at, dimensions, yaw)
 
 
 func beveled(at: Vector3, dimensions: Vector3, color: Color, solid := false, yaw := 0.0) -> void:
 	_beveled.append(Transform3D(Basis(Vector3.UP, yaw).scaled_local(dimensions), at))
 	_bevel_colors.append(color)
 	if solid:
-		_block(at, dimensions, yaw)
+		block(at, dimensions, yaw)
 
 
 func beam(from: Vector3, to: Vector3, width: float, depth: float, color: Color) -> void:
@@ -38,7 +39,7 @@ func beam(from: Vector3, to: Vector3, width: float, depth: float, color: Color) 
 	_paints.append(color)
 
 
-func _block(at: Vector3, dimensions: Vector3, yaw: float) -> void:
+func block(at: Vector3, dimensions: Vector3, yaw: float) -> void:
 	if not is_instance_valid(_blockers):
 		_blockers = StaticBody3D.new()
 		_blockers.collision_layer = SOLID
@@ -52,10 +53,22 @@ func light_strip(at: Vector3, dimensions: Vector3, color: Color, yaw := 0.0) -> 
 	_light_colors.append(color)
 
 
+func model(id: String, at: Vector3, dimensions := Vector3.ONE, yaw := 0.0, tint := Color.WHITE) -> void:
+	if not _models.has(id):
+		var poses: Array[Transform3D] = []
+		var colors: Array[Color] = []
+		_models[id] = [poses, colors]
+	_models[id][0].append(Transform3D(Basis(Vector3.UP, yaw).scaled_local(dimensions), at))
+	_models[id][1].append(tint)
+
+
 func finish() -> void:
 	_batch(_boxes, _paints, BoxMesh.new())
 	_batch(_beveled, _bevel_colors, Forms.cabinet())
 	_batch(_luminous, _light_colors, BoxMesh.new(), true)
+	for id: String in _models:
+		_batch(_models[id][0], _models[id][1], Models.prop(id), false, true)
+	_models.clear()
 	_boxes.clear()
 	_paints.clear()
 	_beveled.clear()
@@ -80,7 +93,7 @@ func surface(at: Vector3, dimensions: Vector3, color: Color, finish_name := "con
 	piece.material_override = paint
 	add_child(piece)
 	if solid:
-		_block(at - Vector3(0, 0.18, 0), Vector3(dimensions.x, 0.34, dimensions.z), 0.0)
+		block(at - Vector3(0, 0.18, 0), Vector3(dimensions.x, 0.34, dimensions.z), 0.0)
 
 
 func glass(at: Vector3, dimensions: Vector3, color: Color, yaw: float) -> void:
@@ -100,45 +113,9 @@ func glass(at: Vector3, dimensions: Vector3, color: Color, yaw: float) -> void:
 	add_child(piece)
 
 
-func tire(at: Vector3, tint: Color) -> void:
-	if _tire_mesh == null:
-		_tire_mesh = TorusMesh.new()
-		_tire_mesh.outer_radius = 0.397
-		_tire_mesh.inner_radius = 0.205
-		_tire_mesh.rings = 20
-		_tire_mesh.ring_segments = 8
-	var piece := MeshInstance3D.new()
-	piece.mesh = _tire_mesh
-	piece.position = at
-	piece.scale.y = 1.18
-	piece.material_override = _paint(tint)
-	piece.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(piece)
-
-
-func cylinder(at: Vector3, radius: float, height: float, color: Color, yaw := 0.0) -> MeshInstance3D:
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
-	mesh.height = height
-	mesh.radial_segments = 10
-	mesh.rings = 1
-	var piece := MeshInstance3D.new()
-	piece.mesh = mesh
-	piece.material_override = _paint(color)
-	piece.position = at
-	piece.rotation.y = yaw
-	add_child(piece)
-	return piece
-
-
-func _batch(poses: Array[Transform3D], colors: Array[Color], mesh: Mesh, emissive := false) -> void:
+func _batch(poses: Array[Transform3D], colors: Array[Color], mesh: Mesh, emissive := false, authored := false) -> void:
 	if poses.is_empty():
 		return
-	var paint := _paint(Color.WHITE)
-	paint.vertex_color_use_as_albedo = true
-	if emissive:
-		paint.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var batch := MultiMesh.new()
 	batch.transform_format = MultiMesh.TRANSFORM_3D
 	batch.use_colors = true
@@ -149,7 +126,12 @@ func _batch(poses: Array[Transform3D], colors: Array[Color], mesh: Mesh, emissiv
 		batch.set_instance_color(index, colors[index])
 	var instance := MultiMeshInstance3D.new()
 	instance.multimesh = batch
-	instance.material_override = paint
+	if not authored:
+		var paint := _paint(Color.WHITE)
+		paint.vertex_color_use_as_albedo = true
+		if emissive:
+			paint.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		instance.material_override = paint
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(instance)
 

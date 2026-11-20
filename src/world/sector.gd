@@ -5,7 +5,6 @@ const Geometry = preload("res://src/world/sector_geometry.gd")
 const Person = preload("res://src/world/person_art.gd")
 const CarArt = preload("res://src/art/car_art.gd")
 const Style = preload("res://src/art/scene_style.gd")
-const Forms = preload("res://src/art/mesh_forms.gd")
 const Placard = preload("res://src/art/placard.gd")
 const Catalog = preload("res://src/domain/catalog.gd")
 const Ui = preload("res://src/ui/ui_kit.gd")
@@ -17,8 +16,6 @@ const LIME := Color("#d9e48a")
 const AMBER := Color("#eab474")
 const BLUE := Color("#6aa7ba")
 const DEALER_X := [-3.9, 3.9, -11.7, 11.7, 18.6]
-
-static var _ridge_mesh: ArrayMesh
 
 class Target:
 	var kind: String
@@ -115,8 +112,7 @@ func _garage() -> void:
 	for z in [9.6, 4.7, -0.15, -5.0, -9.85]:
 		_geo.box(Vector3(0, 4.62, z), Vector3(23, 0.31, 0.22), Color("#374549"))
 		for x in [-5.7, 0.0, 5.7]:
-			_geo.beveled(Vector3(x, 4.41, z), Vector3(3.5, 0.13, 0.39), Color("#747d79"))
-			_geo.light_strip(Vector3(x, 4.334, z), Vector3(3.26, 0.035, 0.255), Color("#fff2d3") if x < 0 else Color("#ecf3ed"))
+			_geo.model("luminaria", Vector3(x, 4.41, z))
 		for x in [-11.12, 11.12]:
 			_geo.box(Vector3(x, 2.40, z), Vector3(0.29, 4.76, 0.27), STEEL_DARK)
 			_geo.box(Vector3(x * 0.991, 0.40, z), Vector3(0.32, 0.8, 0.28), AMBER)
@@ -127,12 +123,8 @@ func _garage() -> void:
 	var extra := maxi(0, int(_state.cars.size()) - 6)
 	if extra == 0:
 		_room_wall(Vector3(0, 2.4, -12.5), Vector3(23, 4.8, 0.38), Color("#647773"), BLUE)
-		_geo.box(Vector3(0, 1.63, -12.23), Vector3(6.01, 3.26, 0.20), STEEL_DARK, true)
-		for strip in 11:
-			_geo.beveled(Vector3(0, 0.145 + float(strip) * 0.268, -12.11), Vector3(5.53, 0.233, 0.102), Color("#607275").lightened(float(strip) * 0.009))
-		_geo.box(Vector3(0, 3.14, -12.06), Vector3(5.91, 0.23, 0.25), Color("#394f55"))
-		for x in [-2.87, 2.87]:
-			_geo.box(Vector3(x, 1.56, -12.03), Vector3(0.13, 3.09, 0.20), Color("#394f55"))
+		_geo.model("porta_enrolar", Vector3(0, 0, -12.09))
+		_geo.block(Vector3(0, 1.63, -12.23), Vector3(6.01, 3.26, 0.20), 0.0)
 	else:
 		for side in [-1.0, 1.0]:
 			_room_wall(Vector3(side * 7.35, 2.4, -12.5), Vector3(8.3, 4.8, 0.38), Color("#3b4a50"), BLUE)
@@ -192,8 +184,7 @@ func _garage_annex(rows: int) -> void:
 		var z := -18.7 - float(row) * 7.65
 		_geo.box(Vector3(0, 4.59, z), Vector3(43.6, 0.23, 0.28), STEEL)
 		for x in [-16.0, -8.0, 0.0, 8.0, 16.0]:
-			_geo.beveled(Vector3(x, 4.45, z), Vector3(4.3, 0.10, 0.32), Color("#66716f"))
-			_geo.light_strip(Vector3(x, 4.389, z), Vector3(4.08, 0.026, 0.218), PAPER)
+			_geo.model("luminaria", Vector3(x, 4.44, z), Vector3(1.23, 0.88, 0.82))
 		for slot in 8:
 			var at := Vector3((float(slot) - 3.5) * 5.2, 0, z)
 			_parking_outline(at, PI, _parking_color(6 + row * 8 + slot))
@@ -201,19 +192,12 @@ func _garage_annex(rows: int) -> void:
 
 
 func _garage_workshop() -> void:
-	_counter(Vector3(-9.0, 0, 3.74), 3.6, PI * 0.5, BLUE)
+	_counter(Vector3(-9.0, 0, 3.74), 3.6, PI * 0.5)
 	_tires(Vector3(-9.35, 0, 1.37), 3)
 	for z in [2.11, 5.30]:
 		_geo.box(Vector3(-11.15, 1.97, z), Vector3(0.36, 1.49, 0.17), STEEL)
-	_geo.beveled(Vector3(-10.98, 1.98, 3.72), Vector3(0.13, 1.45, 4.11), Color("#81796a"))
-	_geo.box(Vector3(-10.89, 2.39, 3.72), Vector3(0.04, 0.05, 3.63), STEEL_DARK)
-	for i in 5:
-		var z := 2.42 + float(i) * 0.57
-		var length := 0.29 + float(i) * 0.057
-		_geo.beveled(Vector3(-10.86, 2.27 - length * 0.5, z), Vector3(0.041, length, 0.061), Color("#b2b2a2"))
-		_geo.beveled(Vector3(-10.85, 2.27, z), Vector3(0.054, 0.083, 0.121), STEEL)
-	_geo.box(Vector3(-10.78, 2.72, 3.69), Vector3(0.29, 0.091, 3.39), STEEL)
-	_geo.light_strip(Vector3(-10.72, 2.661, 3.69), Vector3(0.16, 0.028, 3.14), Color("#fff0c8"))
+	_geo.model("painel_ferramentas", Vector3(-10.98, 1.98, 3.72), Vector3.ONE, PI * 0.5)
+	_geo.model("luminaria", Vector3(-10.78, 2.72, 3.69), Vector3(0.96, 0.82, 0.75), PI * 0.5)
 	_geo.box(Vector3(-11.1, 3.18, 3.73), Vector3(0.42, 0.28, 3.78), STEEL)
 	_placard(Vector3(-10.87, 3.22, 3.73), Vector2(3.67, 0.68), "MECÂNICA", "", LIME, PI * 0.5)
 	var mechanic := Vector3(-7.82, 0, 4.5)
@@ -245,7 +229,8 @@ func _garage_workshop() -> void:
 		_geo.box(Vector3(-10.12, level, -4.60), Vector3(0.32, 0.095, 3.66), BLUE)
 		for crate in 4:
 			var tint := Color("#596965") if (crate + shelf) % 2 == 0 else Color("#a08465")
-			_geo.beveled(Vector3(-10.18, level + 0.23, -5.99 + float(crate) * 0.91), Vector3(0.39, 0.38, 0.72), tint)
+			_geo.model("caixa_carga", Vector3(-10.18, level + 0.048, -5.99 + float(crate) * 0.91),
+				Vector3(0.72, 0.38, 0.39), PI * 0.5, tint.lightened(0.29))
 	_terminal(Vector3(-8.68, 0, -8.6), 0.34, "QUADRO DE METAS", BLUE)
 	_target("goals", "", "Quadro de metas", "Consultar metas", Vector3(-8.48, 0.9, -8.02), 2.20)
 
@@ -269,11 +254,11 @@ func _meet() -> void:
 	_container(Vector3(-20.5, 2.42, -20.8), 5.9, Color("#635460"))
 	_container(Vector3(20.4, 2.42, -20.8), 5.9, Color("#72746d"))
 	for x in [-23.7, -10.0, 10.0, 23.7]:
-		_lamp(Vector3(x, 0, -6.48), AMBER, 4.85)
+		_lamp(Vector3(x, 0, -6.48), 4.85)
 		if absf(x) < 12.0:
 			_omni(Vector3(x, 4.40, -5.83), Color("#ffc789"), 2.05, 11.0)
 	for x in [-9.7, 9.7]:
-		_lamp(Vector3(x, 0, 5.85), AMBER, 4.65)
+		_lamp(Vector3(x, 0, 5.85), 4.65)
 		_omni(Vector3(x, 4.25, 3.75), Color("#ffd394"), 2.25, 12.0)
 	_omni(Vector3(0, 4.58, -14.7), Color("#a9c7e5"), 1.25, 13.0)
 	for x in [-12.4, 12.4]:
@@ -281,18 +266,17 @@ func _meet() -> void:
 		_hill(Vector3(x * 3.4, -1.2, -83), 25.0, 9.0, Color("#62677b"))
 	_hill(Vector3(-10.0, -2.6, -117), 43.0, 16.0, Color("#767688"))
 	_portal_board(Vector3(0, 2.86, -17.45), Vector2(10.6, 0.98), "PORTO DA VIGÍLIA", "PONTO DE ENCONTRO", AMBER)
-	_counter(Vector3(-9.3, 0, 8.8), 3.4, 0.2, AMBER)
+	_counter(Vector3(-9.3, 0, 8.8), 3.4, 0.2)
 	_geo.beveled(Vector3(-9.25, 2.54, 7.95), Vector3(4.0, 0.22, 2.6), Color("#905744"))
 	for x in [-11.09, -7.41]:
 		_geo.box(Vector3(x, 1.24, 7.05), Vector3(0.14, 2.49, 0.16), STEEL, true)
 		_geo.beam(Vector3(x, 1.91, 7.05), Vector3(x, 2.46, 8.79), 0.105, 0.11, STEEL)
 	_geo.light_strip(Vector3(-9.25, 2.42, 8.83), Vector3(2.64, 0.058, 0.09), Color("#f8ce98"))
 	for x in [-20.8, -17.9, -14.9]:
-		_geo.cylinder(Vector3(x, 0.35, 7.15), 0.33, 0.70, Color("#8a6154"))
-		for level in [0.095, 0.33, 0.57]:
-			_geo.cylinder(Vector3(x, level, 7.15), 0.346, 0.040, Color("#544b4b"))
-		_geo.cylinder(Vector3(x, 0.71, 7.15), 0.375, 0.065, Color("#bd9a75"))
-		_geo.beveled(Vector3(x + 0.81, 0.23, 7.10), Vector3(0.40, 0.46, 0.43), STEEL_DARK, true)
+		_geo.model("tambor", Vector3(x, 0, 7.15), Vector3.ONE, x * 0.17)
+		_geo.model("caixa_carga", Vector3(x + 0.81, 0, 7.10), Vector3(0.40, 0.46, 0.43),
+			-0.11, Color("#aab2a5"))
+		_geo.block(Vector3(x + 0.81, 0.23, 7.10), Vector3(0.40, 0.46, 0.43), 0.0)
 	_tires(Vector3(12.0, 0, 8.8), 2)
 	_directory(Vector3(-4.98, 0, 7.6), 0.28)
 	for z in range(-22, 10, 3):
@@ -426,7 +410,7 @@ func _market() -> void:
 	for x in [17.75, 22.45]:
 		_geo.box(Vector3(x, 1.55, 0.01), Vector3(0.14, 3.12, 0.15), STEEL, true)
 		_geo.beam(Vector3(x, 2.48, 0.01), Vector3(x, 3.026, 2.23), 0.115, 0.14, STEEL)
-	_counter(Vector3(20.1, 0, 1.32), 3.15, -0.4, AMBER)
+	_counter(Vector3(20.1, 0, 1.32), 3.15, -0.4)
 	var seller := Vector3(19.8, 0, 2.43)
 	var staff := _person(seller, 3, PI - 0.4)
 	_target("sell", "", "Balcão de avaliação", "Negociar venda", seller + Vector3.UP, 2.45, staff)
@@ -551,11 +535,11 @@ func _terminal(at: Vector3, yaw: float, title: String, ink: Color, subtitle := "
 	shade.position = at + Vector3(0.02, 0.021, 0.04)
 	shade.rotation.y = yaw
 	_geo.add_child(shade)
-	_geo.beveled(at + Vector3.UP * 0.074, Vector3(2.22, 0.16, 0.90), STEEL_DARK, true, yaw)
-	_geo.beveled(at + Vector3.UP * 0.598, Vector3(0.58, 0.924, 0.50), Color("#657679"), true, yaw)
-	_geo.beveled(at + Vector3.UP * 1.422, Vector3(2.63, 0.82, 0.23), Color("#526269"), true, yaw)
-	_geo.box(at + orient * Vector3(0.0, 1.422, 0.114), Vector3(2.42, 0.70, 0.028), Color("#26353c"), false, yaw)
-	_geo.light_strip(at + orient * Vector3(-1.11, 1.422, 0.132), Vector3(0.035, 0.53, 0.014), ink, yaw)
+	_geo.model("terminal", at, Vector3.ONE, yaw)
+	_geo.block(at + Vector3.UP * 0.074, Vector3(2.22, 0.16, 0.90), yaw)
+	_geo.block(at + Vector3.UP * 0.598, Vector3(0.58, 0.924, 0.50), yaw)
+	_geo.block(at + Vector3.UP * 1.422, Vector3(2.63, 0.82, 0.23), yaw)
+	_geo.light_strip(at + orient * Vector3(-1.11, 1.422, 0.134), Vector3(0.035, 0.53, 0.014), ink, yaw)
 	var detail := subtitle if reward <= 0.0 else "%s · %s" % [subtitle, Ui.money(int(reward))]
 	Placard.panel(_geo, Transform3D(orient, at + orient * Vector3(0.033, 1.422, 0.131)),
 		Vector2(2.40, 0.68), title, detail, PAPER, ink.lightened(0.16))
@@ -580,19 +564,13 @@ func _pit_shelter(at: Vector3, plaque: String, ink: Color) -> void:
 	Placard.panel(_geo, Transform3D(Basis.IDENTITY, at + Vector3(0, 2.84, 2.247)),
 		Vector2(6.42, 0.32), plaque, "", PAPER, ink)
 	_geo.light_strip(at + Vector3(0, 2.71, 0.75), Vector3(4.19, 0.07, 0.17), PAPER)
-	_counter(at + Vector3(0, 0, -0.45), 3.55, 0, ink)
+	_counter(at + Vector3(0, 0, -0.45), 3.55, 0)
 
 
-func _counter(at: Vector3, span: float, yaw: float, ink: Color) -> void:
-	var orient := Basis(Vector3.UP, yaw)
-	_geo.box(at + Vector3.UP * 0.447, Vector3(span, 0.902, 0.62), Color("#3b494a"), true, yaw)
-	_geo.beveled(at + Vector3.UP * 0.924, Vector3(span + 0.17, 0.104, 0.74), Color("#a09985"), true, yaw)
-	_geo.box(at + orient * Vector3(0, 0.83, 0.322), Vector3(span * 0.96, 0.027, 0.012), ink, false, yaw)
-	for i in 3:
-		var level := 0.25 + float(i) * 0.17
-		_geo.beveled(at + orient * Vector3(-span * 0.24, level, 0.325), Vector3(span * 0.44, 0.146, 0.049), STEEL, false, yaw)
-		_geo.box(at + orient * Vector3(-span * 0.24, level + 0.031, 0.355), Vector3(span * 0.13, 0.018, 0.021), Color("#86918e"), false, yaw)
-	_geo.beveled(at + orient * Vector3(span * 0.22, 1.014, 0.015), Vector3(0.34, 0.08, 0.25), ink.darkened(0.36), false, yaw)
+func _counter(at: Vector3, span: float, yaw: float) -> void:
+	_geo.model("bancada", at, Vector3(span / 3.6, 1.0, 1.0), yaw)
+	_geo.block(at + Vector3.UP * 0.447, Vector3(span, 0.902, 0.62), yaw)
+	_geo.block(at + Vector3.UP * 0.924, Vector3(span + 0.17, 0.104, 0.74), yaw)
 
 
 func _room_wall(at: Vector3, dimensions: Vector3, tint: Color, stripe: Color) -> void:
@@ -627,36 +605,26 @@ func _fence(at: Vector3, width: float) -> void:
 
 
 func _container(at: Vector3, width: float, tint: Color) -> void:
-	_geo.beveled(at + Vector3.UP * 1.21, Vector3(width, 2.42, 2.26), tint.darkened(0.16), true)
-	_geo.box(at + Vector3(0, 1.21, 1.127), Vector3(width - 0.16, 2.17, 0.035), tint.darkened(0.08))
-	var ribs := roundi(width / 0.27)
-	for i in ribs:
-		var x := (float(i) + 0.5) / float(ribs) * (width - 0.36) - (width - 0.36) * 0.5
-		_geo.beveled(at + Vector3(x, 1.21, 1.151), Vector3(0.085, 2.08, 0.067), tint)
-	for y in [0.103, 2.317]:
-		_geo.box(at + Vector3(0, y, 1.133), Vector3(width, 0.156, 0.097), tint.darkened(0.23))
-		for side in [-1.0, 1.0]:
-			_geo.box(at + Vector3(side * (width * 0.5 - 0.07), y, 1.14), Vector3(0.143, 0.168, 0.111), tint.lightened(0.16))
+	_geo.model("conteiner", at, Vector3(width, 2.42, 2.26), 0.0, tint.lightened(0.23))
+	_geo.block(at + Vector3.UP * 1.21, Vector3(width, 2.42, 2.26), 0.0)
 
 
 func _tires(at: Vector3, height: int) -> void:
 	for i in height:
-		_geo.tire(at + Vector3.UP * (0.12 + float(i) * 0.222), Color("#303539").lightened(float(i % 2) * 0.035))
+		_geo.model("pneu_oficina", at + Vector3.UP * (0.112 + float(i) * 0.221),
+			Vector3.ONE, float(i) * 0.64)
 
 
-func _lamp(at: Vector3, ink: Color, height: float) -> void:
-	_geo.box(at + Vector3.UP * (height * 0.48), Vector3(0.105, height * 0.96, 0.108), STEEL, true)
-	_geo.beveled(at + Vector3.UP * 0.17, Vector3(0.28, 0.34, 0.28), STEEL_DARK)
-	_geo.beam(at + Vector3(0, height - 0.49, 0), at + Vector3(0, height - 0.10, 0.55), 0.085, 0.083, STEEL)
-	_geo.beveled(at + Vector3(0, height - 0.12, 0.63), Vector3(0.32, 0.15, 0.53), STEEL_DARK)
-	_geo.light_strip(at + Vector3(0, height - 0.203, 0.65), Vector3(0.246, 0.027, 0.36), ink.lightened(0.21))
+func _lamp(at: Vector3, height: float) -> void:
+	_geo.model("poste", at, Vector3(1.0, height / 4.85, 1.0))
+	_geo.block(at + Vector3.UP * (height * 0.48), Vector3(0.105, height * 0.96, 0.108), 0.0)
 
 
 func _bollards(at: Vector3, count: int, ink: Color) -> void:
 	for i in count:
-		var post := at + Vector3(1.27 * float(i), 0.44, 0)
-		_geo.beveled(post, Vector3(0.25, 0.88, 0.25), STEEL, true)
-		_geo.box(post + Vector3.UP * 0.34, Vector3(0.267, 0.13, 0.267), ink)
+		var post := at + Vector3(1.27 * float(i), 0, 0)
+		_geo.model("balizador", post, Vector3.ONE, 0.0, ink.lightened(0.19))
+		_geo.block(post + Vector3.UP * 0.44, Vector3(0.25, 0.88, 0.25), 0.0)
 
 
 func _crane(at: Vector3, mirror: bool) -> void:
@@ -690,7 +658,8 @@ func _grandstand(at: Vector3) -> void:
 			if x in [-7, 7]:
 				continue
 			var color := Color("#527784") if absi(x) < 7 else Color("#8b9f96")
-			_geo.beveled(at + Vector3(x, y + 0.135, z + 0.08), Vector3(0.86, 0.29, 0.38), color.lightened(float(row % 2) * 0.075))
+			_geo.model("assento", at + Vector3(x, y + 0.002, z + 0.08),
+				Vector3.ONE, 0.0, color.lightened(0.28 + float(row % 2) * 0.07))
 	_geo.box(at + Vector3(0, 5.70, -3.15), Vector3(42.5, 0.22, 6.1), Color("#657a7c"))
 	for x in [-20.2, -6.8, 6.8, 20.2]:
 		_geo.box(at + Vector3(x, 2.85, -5.75), Vector3(0.24, 5.7, 0.22), STEEL_DARK)
@@ -698,24 +667,8 @@ func _grandstand(at: Vector3) -> void:
 
 
 func _hill(at: Vector3, radius: float, height: float, tint: Color) -> void:
-	if _ridge_mesh == null:
-		_ridge_mesh = Forms.loft([
-			Vector4(0.48, -0.50, 0.48, 0), Vector4(0.48, -0.14, 0.44, -0.01),
-			Vector4(0.33, 0.18, 0.31, -0.026), Vector4(0.19, 0.39, 0.17, -0.050),
-			Vector4(0.032, 0.50, 0.04, -0.060),
-		], 9, PI * 0.09)
-	var material := StandardMaterial3D.new()
-	material.albedo_color = tint
-	material.roughness = 1.0
-	var mound := MeshInstance3D.new()
-	mound.mesh = _ridge_mesh
-	mound.material_override = material
-	mound.position = at
-	mound.scale = Vector3(radius * 2.0, height, radius * 1.52)
-	mound.rotation.y = at.x * 0.021
-	mound.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_geo.add_child(mound)
-
+	_geo.model("morro", at, Vector3(radius * 2.0, height, radius * 1.52), at.x * 0.021,
+		tint.lightened(0.28))
 
 func _omni(at: Vector3, color: Color, energy: float, reach: float) -> void:
 	var fill := OmniLight3D.new()
