@@ -209,7 +209,8 @@ func practice() -> void:
 	body.add_child(Ui.paragraph("Use seu carro ativo para explorar a pista sem classificação, apostas ou premiação.", 17))
 	for track_id: String in PRACTICE_TRACKS:
 		var route := Routes.get_route(track_id)
-		_choice(body, str(route.name), "Pista aberta", "Treinar", func() -> void:
+		var course_type := "Circuito" if route.practice_mode == "circuit" else "Percurso aberto"
+		_choice(body, str(route.name), course_type, "Treinar", func() -> void:
 			close_dialog()
 			practice_requested.emit(track_id)
 		)

@@ -30,6 +30,7 @@ var _head: Node3D
 var _arms: Array[Node3D] = []
 var _legs: Array[Node3D] = []
 var _knees: Array[Node3D] = []
+var _soles: Array[MeshInstance3D] = []
 var _phase := 0.0
 var _amount := 0.0
 var _seed := 0.0
@@ -138,7 +139,7 @@ func _build_limbs(side: float, coat: Color, pants: Color, skin: Color) -> void:
 		Vector4(0.082, -0.423, 0.128, -0.057), Vector4(0.083, -0.380, 0.126, -0.058),
 		Vector4(0.070, -0.348, 0.098, -0.044), Vector4(0.055, -0.315, 0.058, 0.0),
 	], GRAPHITE)
-	_cabinet(knee, Vector3(0, -0.423, -0.056), Vector3(0.159, 0.029, 0.238), SOLE)
+	_soles.append(_cabinet(knee, Vector3(0, -0.423, -0.056), Vector3(0.159, 0.029, 0.238), SOLE))
 
 
 func animate(delta: float, speed: float) -> void:
@@ -153,7 +154,15 @@ func animate(delta: float, speed: float) -> void:
 	_arms[1].rotation.x = stride * 0.43 + sin(_phase - _seed) * 0.042
 	_head.rotation.y = sin(_phase * 0.51 + _seed) * 0.21 * (1.0 - _amount)
 	_body.rotation.z = sin(_phase) * _amount * 0.024
-	_body.position.y = 0.009 + absf(stride) * 0.040 + sin(_phase + _seed) * 0.005
+	_body.position.y = 0.0
+	# Anchor the lower sole after posing the knees, including the heel and toe on a stride.
+	_body.position.y = 0.002 - minf(_sole_height(0), _sole_height(1))
+
+
+func _sole_height(index: int) -> float:
+	var foot := _body.transform * _legs[index].transform * _knees[index].transform * _soles[index].transform
+	var half_height := (absf(foot.basis.x.y) + absf(foot.basis.y.y) + absf(foot.basis.z.y)) * 0.5
+	return foot.origin.y - half_height
 
 
 static func _joint(parent: Node3D, at: Vector3) -> Node3D:

@@ -4,6 +4,9 @@ extends Node3D
 const RouteData = preload("res://src/tracks/route_data.gd")
 const Dressing = preload("res://src/tracks/track_dressing.gd")
 const SPACING := 4.0
+const DRAG_GRID := 3.0
+const GRID_HALF_WIDTH := 1.28
+const GRID_FRONT := 2.55
 
 var length := 0.0
 var half_width := 7.0
@@ -12,6 +15,7 @@ var route_name := ""
 var track_id := ""
 var mode := ""
 var start_line := 22.0
+var grid_size := 6
 var quality := 1
 
 var _points := PackedVector3Array()
@@ -23,9 +27,10 @@ var _maximum := Vector2.ZERO
 var _visuals: Node3D
 
 
-func build(requested_track: String, requested_mode: String = "circuit", requested_quality: int = 1) -> void:
+func build(requested_track: String, requested_mode: String = "circuit", requested_quality: int = 1, starters: int = 6) -> void:
 	var config := _prepare(requested_track, requested_mode)
 	quality = clampi(requested_quality, 0, 2)
+	grid_size = clampi(starters, 1, 2 if mode == "drag" else 6)
 	if is_instance_valid(_visuals):
 		remove_child(_visuals)
 		_visuals.queue_free()
@@ -49,15 +54,59 @@ func _prepare(requested_track: String, requested_mode: String) -> Dictionary:
 	route_name = config.name
 	half_width = config.half_width
 	closed = mode == "circuit"
-	start_line = 3.0 if mode == "drag" else 22.0
+	start_line = 6.0 if mode == "drag" else 22.0
 	var anchors := PackedVector3Array(config.points)
 	if mode == "drag":
-		anchors = PackedVector3Array([Vector3(0, 0.65, 0), Vector3(0, 0.65, 135.112), Vector3(0, 0.65, 270.224), Vector3(0, 0.65, 405.336)])
+		var finish := DRAG_GRID + 402.336
+		anchors = PackedVector3Array([Vector3(0, 0.65, 0), Vector3(0, 0.65, finish / 3.0),
+			Vector3(0, 0.65, finish * 2.0 / 3.0), Vector3(0, 0.65, finish)])
 		half_width = 6.8
 	elif closed and config.has("circuit_return"):
 		anchors.append_array(PackedVector3Array(config.circuit_return))
 	_create_centerline(anchors)
 	return config
+
+
+func starting_slot(index: int, starters: int) -> Vector2:
+	var side := -1.0 if index % 2 == 0 else 1.0
+	if mode == "drag":
+		return Vector2(DRAG_GRID, side * 2.2 if starters > 1 else 0.0)
+	var row := floorf(index * 0.5)
+	return Vector2(start_line - 6.0 * (1.0 + row), side * 1.7 if starters > 1 else 0.0)
+
+
+func race_finish(laps: int) -> float:
+	return start_line + length * laps if closed else length
+
+
+func completed_laps(progress: float) -> int:
+	return maxi(0, floori((progress - start_line) / length)) if closed else 0
+
+
+func stations() -> PackedFloat64Array:
+	var distances := PackedFloat64Array()
+	for i in range(_points.size() - 1):
+		distances.append(i * _interval)
+	distances.append(length)
+	return distances
+
+
+func centerline() -> PackedVector3Array:
+	return _points
+
+
+func pavement_frame(distance: float) -> Dictionary:
+	var frame := sample(distance)
+	if not closed and (distance < 0.0 or distance > length):
+		frame.position += frame.forward * (distance - clampf(distance, 0.0, length))
+		return frame
+	var d := fposmod(distance, length) if closed else clampf(distance, 0.0, length)
+	var i := mini(floori(d / _interval), _points.size() - 2)
+	var blend := clampf(d / _interval - i, 0.0, 1.0)
+	var a := _directions[i].cross(Vector3.UP).normalized()
+	var b := _directions[i + 1].cross(Vector3.UP).normalized()
+	frame.right = a.lerp(b, blend)
+	return frame
 
 
 func sample(distance: float) -> Dictionary:
@@ -168,6 +217,10 @@ func _create_centerline(anchors: PackedVector3Array) -> void:
 		var map_point := Vector2(point.x, -point.z)
 		_minimum = _minimum.min(map_point)
 		_maximum = _maximum.max(map_point)
+	if closed:
+		_points[-1] = _points[0]
+	else:
+		_points[-1] = anchors[-1]
 	for i in range(step_count + 1):
 		var before := posmod(i - 1, step_count) if closed else maxi(i - 1, 0)
 		var after := posmod(i + 1, step_count) if closed else mini(i + 1, step_count)

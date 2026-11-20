@@ -1,7 +1,6 @@
 extends Node3D
 ## Meshes and collision volumes for the walkable districts.
 
-const Ui = preload("res://src/ui/ui_kit.gd")
 const Style = preload("res://src/art/scene_style.gd")
 const Forms = preload("res://src/art/mesh_forms.gd")
 const SOLID := 1
@@ -115,21 +114,6 @@ func tire(at: Vector3, tint: Color) -> void:
 	piece.material_override = _paint(tint)
 	piece.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(piece)
-
-
-func sign(words: String, at: Vector3, letter_scale: float, color: Color, yaw := 0.0) -> Label3D:
-	var label := Label3D.new()
-	label.text = words
-	label.font = Ui.DISPLAY
-	label.font_size = 58
-	label.pixel_size = letter_scale
-	label.outline_size = 0
-	label.modulate = color
-	label.rotation.y = yaw
-	label.position = at
-	label.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	add_child(label)
-	return label
 
 
 func cylinder(at: Vector3, radius: float, height: float, color: Color, yaw := 0.0) -> MeshInstance3D:

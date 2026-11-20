@@ -1,8 +1,8 @@
 # Asfalto de Troca
 
-**Versão 0.3.0 · Android · 3D · single-player offline**
+**Versão 0.4.0 · Android · 3D · single-player offline**
 
-[Baixar o APK para Android na release v0.3.0](https://github.com/Henrique-Girao/Jogo-de-Corrida/releases/tag/v0.3.0)
+[Baixar o APK para Android na release v0.4.0](https://github.com/Henrique-Girao/Jogo-de-Corrida/releases/tag/v0.4.0)
 
 Baía do Sal é uma cidade portuária fictícia. Você começa na Oficina Ribeira com um **Brasa 1.6** e **Cr 2.500**. Explore os quatro setores a pé e vá até os carros, pilotos, bancadas ou guichês para interagir. Procure o terminal de **Saída** em cada setor para viajar.
 
@@ -13,6 +13,13 @@ Baía do Sal é uma cidade portuária fictícia. Você começa na Oficina Ribeir
 - Os quatro setores receberam sinalização, materiais e peças específicas. A oficina tem iluminação quente sobre a bancada, o porto tem água e guindastes treliçados, o paddock tem uma arquibancada com setores e a revenda tem vitrines e bases de exposição.
 - O Autódromo Candeia tem luz diurna e boxes revistos. O Cais Ferrugem usa tons frios de fim de tarde e luzes quentes junto à pista. Na Serra da Lua, a vegetação e os taludes acompanham as curvas.
 - Os painéis de exploração e corrida usam a mesma paleta. Os botões deixam o centro da tela livre.
+
+## Pistas e cenários da versão 0.4.0
+
+- A posição dos carros e a pintura do grid usam as mesmas vagas de largada. A faixa sob o pórtico do circuito marca a passagem de volta e a chegada.
+- O asfalto e a sinalização compartilham as seções do traçado. Os circuitos fecham com a mesma seção nas duas pontas. O treino livre identifica circuito e percurso aberto.
+- A colocação de estruturas, contêineres e vegetação nas pistas considera a distância ao asfalto e a altura do terreno. Arquibancadas, postes e placas ganharam apoios conectados ao chão.
+- Nos setores, os letreiros têm margens calculadas, as placas de preço ficam no piso e as inscrições da Copa da Orla têm espaço próprio no paddock.
 
 ## Como jogar
 
@@ -100,8 +107,10 @@ XDG_DATA_HOME="$(mktemp -d)" godot --headless --path . \
   --script res://tests/game_smoke.gd --fixed-fps 60 -- --touch-controls
 XDG_DATA_HOME="$(mktemp -d)" godot --headless --path . \
   --script res://tests/exploration_smoke.gd --fixed-fps 60 -- --touch-controls
+XDG_DATA_HOME="$(mktemp -d)" godot --headless --path . \
+  --script res://tests/scenery_smoke.gd
 ```
 
-Os testes cobrem a garagem com 99 carros, colisão ao caminhar, prévia e aplicação de pintura, NPCs e seus carros, negociação no pátio, treino livre e o fluxo de uma corrida. O teste de ponta a ponta anda até a saída, viaja ao paddock, chega ao guichê por toque, completa a arrancada e volta ao mesmo ponto com o prêmio salvo. Os quatro setores foram conferidos no desktop com renderização OpenGL.
+Os testes cobrem a garagem com 99 carros, colisão ao caminhar, prévia e aplicação de pintura, NPCs e seus carros, negociação no pátio, treino livre e o fluxo de uma corrida. O teste de ponta a ponta anda até a saída, viaja ao paddock, chega ao guichê por toque, completa a arrancada e volta ao mesmo ponto com o prêmio salvo. O teste de cenários verifica o asfalto em três faixas de cada traçado, a emenda dos circuitos, as marcas de largada, a cronometragem na faixa e a área útil dos letreiros. Os quatro setores e as três pistas foram conferidos no desktop com renderização OpenGL.
 
-A distribuição inclui um APK com assinatura de teste. A validação da versão 0.3.0 em aparelhos Android físicos e as medições de desempenho continuam pendentes.
+A distribuição inclui um APK com assinatura de teste. A validação da versão 0.4.0 em aparelhos Android físicos e as medições de desempenho continuam pendentes.

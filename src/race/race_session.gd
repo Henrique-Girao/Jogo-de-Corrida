@@ -74,14 +74,12 @@ func _ready() -> void:
 	_track = Track.new()
 	add_child(_track)
 	var course_mode := str(_event.get("course_mode", _mode))
-	_track.build(str(_event.get("track", "autodromo")), course_mode, quality)
+	var opponents := _opponents if not _opponents.is_empty() else fallback_opponents()
+	opponents = opponents.slice(0, 1 if _mode == "drag" else 5)
+	_track.build(str(_event.get("track", "autodromo")), course_mode, quality, 6 if _practice else opponents.size() + 1)
 	_laps = maxi(int(_event.get("laps", 1)), 1) if _track.closed else 1
-	_race_distance = float(_track.length) * _laps
+	_race_distance = _track.race_finish(_laps)
 	_time_limit = maxf(100.0, _race_distance / 6.0 + 25.0)
-
-	var opponents := _opponents
-	if opponents.is_empty():
-		opponents = fallback_opponents()
 	spawn_field(opponents, quality)
 	update_standings()
 	build_camera()
@@ -89,10 +87,7 @@ func _ready() -> void:
 
 
 func spawn_field(opponents: Array, quality: int) -> void:
-	var rival_count := mini(opponents.size(), 5)
-	if _mode == "drag":
-		rival_count = mini(rival_count, 1)
-	var car_count := rival_count + 1
+	var car_count := opponents.size() + 1
 	for index in range(car_count):
 		var is_player := index == car_count - 1
 		var profile: Dictionary = {"id": "player", "name": "Você"} if is_player else opponents[index]
@@ -104,24 +99,16 @@ func spawn_field(opponents: Array, quality: int) -> void:
 		var car := DriveCar.new()
 		add_child(car)
 		car.initialize(stats, profile, quality if is_player else maxi(0, quality - 1))
-		var distance := maxf(4.0, 16.0 - floorf(index * 0.5) * 6.0)
-		var lateral := -1.7 if index % 2 == 0 else 1.7
-		if car_count == 1:
-			lateral = 0.0
-		elif car_count == 2:
-			distance = 16.0
-		if _mode == "drag":
-			distance = 3.0
-			lateral = -2.2 if index == 0 else 2.2
-		car.initial_lane = lateral
-		car.spawn_at(_track, distance, lateral)
-		car.progress_distance = distance
-		car.verified_distance = distance
-		car.next_checkpoint = distance + CHECKPOINT_GAP
+		var slot: Vector2 = _track.starting_slot(index, car_count)
+		car.initial_lane = slot.y
+		car.spawn_at(_track, slot.x, slot.y)
+		car.progress_distance = slot.x
+		car.verified_distance = slot.x
+		car.next_checkpoint = slot.x + CHECKPOINT_GAP
 		_cars.append(car)
 		if is_player:
 			_player = car
-			_start_distance = distance
+			_start_distance = slot.x
 
 
 func fallback_opponents() -> Array:
@@ -419,7 +406,7 @@ func update_car_road(car: DriveCar, delta: float) -> void:
 		car.verified_distance = car.progress_distance
 		car.next_checkpoint = car.verified_distance + CHECKPOINT_GAP
 	if absf(car.lane) < float(_track.half_width) + 1.0 and not car.wrong_way:
-		register_laps(car, length_m)
+		register_laps(car)
 	if car.wrong_way or (car.off_track and car.speed() < 2.0):
 		car.stopped_time += delta
 	else:
@@ -433,7 +420,7 @@ func update_car_road(car: DriveCar, delta: float) -> void:
 	car.apply_pose(road, delta)
 
 
-func register_laps(car: DriveCar, length_m: float) -> void:
+func register_laps(car: DriveCar) -> void:
 	var chrono := _elapsed + (_time_penalty if car == _player else 0.0)
 	if car.progress_distance >= _race_distance - 0.015:
 		car.finish_time = chrono
@@ -442,7 +429,7 @@ func register_laps(car: DriveCar, length_m: float) -> void:
 		return
 	if not _track.closed:
 		return
-	var crossed := int(floorf(car.progress_distance / length_m))
+	var crossed: int = _track.completed_laps(car.progress_distance)
 	# Record a split once per completed lap, including after a recovery near the stripe.
 	if crossed > car.splits:
 		var lap := chrono - car.last_split_time
@@ -514,7 +501,7 @@ func send_telemetry() -> void:
 		"time": chrono, "time_ms": roundi(chrono * 1000.0),
 		"position": maxi(_standings.find(_player) + 1, 1),
 		"field_size": _cars.size(),
-		"lap": clampi(int(floorf(_player.progress_distance / float(_track.length))) + 1, 1, _laps),
+		"lap": clampi(_track.completed_laps(_player.progress_distance) + 1, 1, _laps),
 		"laps": _laps, "countdown": countdown,
 		"heat": int(_event.get("round", 1)), "heat_total": int(_event.get("rounds", 1)),
 		"progress": clampf((_player.progress_distance - _start_distance) / maxf(_race_distance - _start_distance, 1.0), 0.0, 1.0),

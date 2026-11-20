@@ -39,10 +39,10 @@ func _ready() -> void:
 	_marker.text = "◆"
 	_marker.font = Ui.BODY
 	_marker.font_size = 29
-	_marker.pixel_size = 0.0065
+	_marker.pixel_size = 0.0056
 	_marker.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_marker.modulate = Ui.ACID
-	_marker.outline_size = 7
+	_marker.outline_size = 5
 	_marker.outline_modulate = Ui.INK
 	_marker.hide()
 	add_child(_marker)
@@ -209,13 +209,19 @@ func _update_target() -> void:
 
 func _set_target(candidate: Sector.Target) -> void:
 	_target = candidate
+	var has_name := sector.focus_label(candidate) if is_instance_valid(sector) else false
 	if candidate == null:
 		hud.set_context("", "")
 		_marker.hide()
 	else:
 		hud.set_context(candidate.title, candidate.action)
-		_marker.global_position = candidate.position + Vector3.UP * (1.37 if candidate.kind == "rival" else 0.82)
-		_marker.visible = not dialogs.is_open()
+		var lift := 0.92
+		if candidate.kind in ["travel", "event", "goals", "practice", "sell", "tune"]:
+			lift = 1.26
+		elif candidate.kind == "paint":
+			lift = 2.46
+		_marker.global_position = candidate.position + Vector3.UP * lift
+		_marker.visible = not has_name and not dialogs.is_open()
 
 
 func _on_modal(open: bool) -> void:
@@ -224,7 +230,8 @@ func _on_modal(open: bool) -> void:
 	player.reset_input()
 	if not open:
 		player.release_focus()
-	_marker.visible = not open and _target != null
+	var has_name := sector.focus_label(null if open else _target) if is_instance_valid(sector) else false
+	_marker.visible = not open and _target != null and not has_name
 
 
 func _paint_preview(uid: String, color: String) -> void:

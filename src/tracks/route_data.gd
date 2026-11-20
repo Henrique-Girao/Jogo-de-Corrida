@@ -4,6 +4,7 @@ extends RefCounted
 const AUTODROMO := {
 	"name": "Autódromo Candeia",
 	"subtitle": "Pista oficial • Vale da Candeia",
+	"practice_mode": "circuit",
 	"half_width": 7.2,
 	"points": [
 		Vector3(0, 0.36, 0), Vector3(0, 0.36, 96), Vector3(16, 0.70, 207),
@@ -35,6 +36,7 @@ const AUTODROMO := {
 const DOCAS := {
 	"name": "Cais Ferrugem",
 	"subtitle": "Porto industrial • Setor 06",
+	"practice_mode": "sprint",
 	"half_width": 6.2,
 	"points": [
 		Vector3(0, 0.65, 0), Vector3(0, 0.64, 87), Vector3(0, 0.64, 179),
@@ -66,6 +68,7 @@ const DOCAS := {
 const SERRA := {
 	"name": "Serra da Lua",
 	"subtitle": "Rodovia BR-63 • Alto da Lua",
+	"practice_mode": "sprint",
 	"half_width": 5.6,
 	"points": [
 		Vector3(0, 1.4, 0), Vector3(0, 1.8, 57), Vector3(-17, 4.0, 130),

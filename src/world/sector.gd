@@ -6,6 +6,7 @@ const Person = preload("res://src/world/person_art.gd")
 const CarArt = preload("res://src/art/car_art.gd")
 const Style = preload("res://src/art/scene_style.gd")
 const Forms = preload("res://src/art/mesh_forms.gd")
+const Placard = preload("res://src/art/placard.gd")
 const Catalog = preload("res://src/domain/catalog.gd")
 const Ui = preload("res://src/ui/ui_kit.gd")
 
@@ -46,6 +47,7 @@ var signature: int
 var _geo: Geometry
 var _state: Node
 var _people: Array[Person] = []
+var _names: Dictionary[String, Label3D] = {}
 var _vehicle_range: float
 
 
@@ -91,6 +93,15 @@ func animate_people(delta: float, observer: Vector3) -> void:
 			person.animate(delta, 0.0)
 
 
+func focus_label(target: Target) -> bool:
+	var active := ""
+	if target != null and target.kind in ["rival", "offer"]:
+		active = target.key
+	for key in _names:
+		_names[key].visible = key == active
+	return _names.has(active)
+
+
 func _garage() -> void:
 	spawn = Vector3(-0.65, 0.03, 7.2)
 	_atmosphere(Color("#526d7a"), Color("#b0b4a7"), Color("#f9e8cd"), 0.86, 0.74, 0.0, Vector3(-51, -34, 0), 0.0)
@@ -119,24 +130,27 @@ func _garage() -> void:
 		_geo.box(Vector3(0, 1.63, -12.23), Vector3(6.01, 3.26, 0.20), STEEL_DARK, true)
 		for strip in 11:
 			_geo.beveled(Vector3(0, 0.145 + float(strip) * 0.268, -12.11), Vector3(5.53, 0.233, 0.102), Color("#607275").lightened(float(strip) * 0.009))
-		_geo.box(Vector3(0, 3.19, -12.03), Vector3(5.91, 0.19, 0.23), Color("#394f55"))
+		_geo.box(Vector3(0, 3.14, -12.06), Vector3(5.91, 0.23, 0.25), Color("#394f55"))
 		for x in [-2.87, 2.87]:
 			_geo.box(Vector3(x, 1.56, -12.03), Vector3(0.13, 3.09, 0.20), Color("#394f55"))
 	else:
 		for side in [-1.0, 1.0]:
 			_room_wall(Vector3(side * 7.35, 2.4, -12.5), Vector3(8.3, 4.8, 0.38), Color("#3b4a50"), BLUE)
 		_garage_annex(ceili(float(extra) / 8.0))
-	_wall_sign("OFICINA RIBEIRA", Vector3(0, 3.94, -12.12), 8.2, LIME, 0.011)
-	_geo.sign("COLEÇÃO", Vector3(0, 3.44, -12.19), 0.006, PAPER)
+	_geo.box(Vector3(0, 4.01, -12.5), Vector3(7.1, 1.62, 0.39), Color("#435659"), true)
+	_placard(Vector3(0, 3.89, -12.26), Vector2(6.2, 1.05), "OFICINA RIBEIRA", "COLEÇÃO", LIME)
+	if extra > 0:
+		_placard(Vector3(0, 3.89, -12.73), Vector2(5.7, 1.05), "OFICINA RIBEIRA", "MECÂNICA E PINTURA", LIME, PI)
 	_garage_workshop()
 	_omni(Vector3(-6.9, 3.75, 3.7), Color("#ffddae"), 1.77, 11.0)
 	_omni(Vector3(6.2, 3.78, 2.1), Color("#d4fff7"), 1.45, 10.5)
 	_omni(Vector3(-1.2, 3.9, -7.55), Color("#f3ebd0"), 1.42, 11.0)
 	_directory(Vector3(8.85, 0, -6.5), -0.11)
-	_wall_sign("SAÍDA", Vector3(7.65, 3.5, -12.1), 3.5, LIME, 0.011)
 	for row in 3:
-		for side in [-1.0, 1.0]:
-			_parking_outline(Vector3(side * 4.9, 0.02, 1.10 - float(row) * 5.0), side * PI * 0.5, BLUE.darkened(0.2))
+		for column in 2:
+			var side := -1.0 if column == 0 else 1.0
+			_parking_outline(Vector3(side * 4.9, 0.0, 1.10 - float(row) * 5.0), side * PI * 0.5,
+				_parking_color(row * 2 + column))
 	for i in _state.cars.size():
 		var car: Dictionary = _state.cars[i]
 		var spec := Catalog.effective(car)
@@ -145,22 +159,24 @@ func _garage() -> void:
 		var yaw: float
 		if i < 6:
 			var side := -1.0 if i % 2 == 0 else 1.0
-			at = Vector3(side * 4.9, 0.02, 1.10 - floorf(float(i) / 2.0) * 5.0)
+			at = Vector3(side * 4.9, 0.0, 1.10 - floorf(float(i) / 2.0) * 5.0)
 			yaw = side * PI * 0.5
-			if active:
-				_parking_outline(at + Vector3(0, 0.007, 0), yaw, LIME)
 		else:
 			var slot := int(i) - 6
-			at = Vector3((float(slot % 8) - 3.5) * 5.2, 0.02, -18.7 - floorf(float(slot) / 8.0) * 7.65)
+			at = Vector3((float(slot % 8) - 3.5) * 5.2, 0.0, -18.7 - floorf(float(slot) / 8.0) * 7.65)
 			yaw = PI
-			if active:
-				_parking_outline(at, yaw, LIME)
 		var body := _park(spec, at, yaw, active, str(car.uid))
 		var title := str(spec.name)
 		if active:
 			title += " · Ativo"
 		_target("car", str(car.uid), title, "Ver carro", at + Vector3(0, 0.82, 0), 3.35, body)
 		_car_plate(at, yaw, str(spec.name), LIME if active else PAPER)
+
+
+func _parking_color(slot: int) -> Color:
+	if slot < _state.cars.size() and str(_state.cars[slot].uid) == str(_state.active_uid):
+		return LIME
+	return BLUE.darkened(0.2)
 
 
 func _garage_annex(rows: int) -> void:
@@ -176,16 +192,19 @@ func _garage_annex(rows: int) -> void:
 		var z := -18.7 - float(row) * 7.65
 		_geo.box(Vector3(0, 4.59, z), Vector3(43.6, 0.23, 0.28), STEEL)
 		for x in [-16.0, -8.0, 0.0, 8.0, 16.0]:
-			_geo.light_strip(Vector3(x, 4.40, z), Vector3(4.2, 0.08, 0.22), PAPER)
+			_geo.beveled(Vector3(x, 4.45, z), Vector3(4.3, 0.10, 0.32), Color("#66716f"))
+			_geo.light_strip(Vector3(x, 4.389, z), Vector3(4.08, 0.026, 0.218), PAPER)
 		for slot in 8:
 			var at := Vector3((float(slot) - 3.5) * 5.2, 0, z)
-			_parking_outline(at, PI, BLUE.darkened(0.2))
+			_parking_outline(at, PI, _parking_color(6 + row * 8 + slot))
 		_geo.box(Vector3(0, 0.015, z + 3.47), Vector3(42, 0.01, 0.05), BLUE.darkened(0.39))
 
 
 func _garage_workshop() -> void:
 	_counter(Vector3(-9.0, 0, 3.74), 3.6, PI * 0.5, BLUE)
 	_tires(Vector3(-9.35, 0, 1.37), 3)
+	for z in [2.11, 5.30]:
+		_geo.box(Vector3(-11.15, 1.97, z), Vector3(0.36, 1.49, 0.17), STEEL)
 	_geo.beveled(Vector3(-10.98, 1.98, 3.72), Vector3(0.13, 1.45, 4.11), Color("#81796a"))
 	_geo.box(Vector3(-10.89, 2.39, 3.72), Vector3(0.04, 0.05, 3.63), STEEL_DARK)
 	for i in 5:
@@ -195,15 +214,19 @@ func _garage_workshop() -> void:
 		_geo.beveled(Vector3(-10.85, 2.27, z), Vector3(0.054, 0.083, 0.121), STEEL)
 	_geo.box(Vector3(-10.78, 2.72, 3.69), Vector3(0.29, 0.091, 3.39), STEEL)
 	_geo.light_strip(Vector3(-10.72, 2.661, 3.69), Vector3(0.16, 0.028, 3.14), Color("#fff0c8"))
-	_wall_sign("MECÂNICA", Vector3(-10.8, 3.25, 3.74), 3.65, LIME, 0.009, PI * 0.5)
+	_geo.box(Vector3(-11.1, 3.18, 3.73), Vector3(0.42, 0.28, 3.78), STEEL)
+	_placard(Vector3(-10.87, 3.22, 3.73), Vector2(3.67, 0.68), "MECÂNICA", "", LIME, PI * 0.5)
 	var mechanic := Vector3(-7.82, 0, 4.5)
 	var npc := _person(mechanic, 1, -PI * 0.5)
 	_target("tune", "", "Bancada de mecânica", "Abrir oficina", mechanic + Vector3.UP, 2.3, npc)
+	_geo.beveled(Vector3(9.23, 0.19, 0.2), Vector3(0.55, 0.40, 4.24), STEEL_DARK, true)
 	_geo.box(Vector3(9.22, 1.71, 0.2), Vector3(0.13, 2.7, 4.2), Color("#637a7d"), true)
+	for z in [-1.82, 2.22]:
+		_geo.box(Vector3(9.29, 1.58, z), Vector3(0.21, 3.16, 0.15), STEEL)
 	_geo.box(Vector3(8.75, 3.25, 0.2), Vector3(1.06, 0.24, 4.34), STEEL_DARK)
 	_geo.light_strip(Vector3(8.50, 3.10, 0.2), Vector3(0.18, 0.065, 3.68), Color("#c9eee6"))
 	_geo.light_strip(Vector3(9.12, 2.82, 0.2), Vector3(0.06, 0.045, 3.45), Color("#d2ecea"))
-	_wall_sign("PINTURA", Vector3(9.10, 2.30, 0.18), 3.45, PAPER, 0.009, -PI * 0.5)
+	_placard(Vector3(9.112, 2.30, 0.18), Vector2(3.32, 0.62), "PINTURA", "", PAPER, -PI * 0.5)
 	var stage_colors: Array = Catalog.COLORS.values()
 	for col in 5:
 		for row in 2:
@@ -232,13 +255,14 @@ func _meet() -> void:
 	var horizon := Color("#a68a87")
 	_atmosphere(Color("#274767"), horizon, Color("#ffd2a6"), 0.83, 0.68, 0.0039, Vector3(-13, 157, 0), 0.57, Color("#a2b3c6"))
 	_geo.surface(Vector3(0, 0, -5.0), Vector3(54, 0, 39), Color("#5a6269"), "asphalt", 4.5)
-	var water := Style.water(Vector2(420, 340), Color("#263f56"), Color("#887f9d"), horizon, 139.0)
-	water.position = Vector3(0, -0.81, -192.0)
+	var water := Style.water(Vector2(440, 420), Color("#263f56"), Color("#887f9d"), horizon, 134.0)
+	water.position = Vector3(0, -0.81, -207.0)
 	_geo.add_child(water)
 	_geo.box(Vector3(0, -0.6, -24.2), Vector3(54, 1.1, 0.50), Color("#50545d"))
 	_fence(Vector3(0, 0, -24.15), 54.0)
 	for x in [-26.85, 26.85]:
 		_geo.box(Vector3(x, 0.69, -5.0), Vector3(0.23, 1.38, 39), Color("#32454f"), true)
+		_geo.box(Vector3(x, -0.59, -5.0), Vector3(0.56, 1.16, 39.0), Color("#535860"))
 	_geo.box(Vector3(0, 0.62, 14.35), Vector3(54, 1.25, 0.28), STEEL_DARK, true)
 	for x in [-20.5, -11.9, 10.9, 20.4]:
 		_container(Vector3(x, 0.0, -20.8), 5.9, Color("#895448") if x < 0 else Color("#4c6877"))
@@ -256,16 +280,12 @@ func _meet() -> void:
 		_crane(Vector3(x, -0.75, -30.0), x < 0)
 		_hill(Vector3(x * 3.4, -1.2, -83), 25.0, 9.0, Color("#62677b"))
 	_hill(Vector3(-10.0, -2.6, -117), 43.0, 16.0, Color("#767688"))
-	_geo.beveled(Vector3(0, 2.8, -17.45), Vector3(10.7, 0.91, 0.26), Color("#343f48"))
-	for x in [-5.2, 5.2]:
-		_geo.box(Vector3(x, 1.18, -17.45), Vector3(0.16, 2.42, 0.22), STEEL_DARK, true)
-		_geo.light_strip(Vector3(x, 2.78, -17.30), Vector3(0.09, 0.50, 0.05), AMBER)
-	_geo.sign("PORTO DA VIGÍLIA", Vector3(0, 2.87, -17.29), 0.0144, PAPER)
-	_geo.sign("PONTO DE ENCONTRO", Vector3(0, 2.57, -17.29), 0.0053, AMBER)
+	_portal_board(Vector3(0, 2.86, -17.45), Vector2(10.6, 0.98), "PORTO DA VIGÍLIA", "PONTO DE ENCONTRO", AMBER)
 	_counter(Vector3(-9.3, 0, 8.8), 3.4, 0.2, AMBER)
 	_geo.beveled(Vector3(-9.25, 2.54, 7.95), Vector3(4.0, 0.22, 2.6), Color("#905744"))
 	for x in [-11.09, -7.41]:
-		_geo.box(Vector3(x, 1.22, 7.05), Vector3(0.12, 2.43, 0.14), STEEL)
+		_geo.box(Vector3(x, 1.24, 7.05), Vector3(0.14, 2.49, 0.16), STEEL, true)
+		_geo.beam(Vector3(x, 1.91, 7.05), Vector3(x, 2.46, 8.79), 0.105, 0.11, STEEL)
 	_geo.light_strip(Vector3(-9.25, 2.42, 8.83), Vector3(2.64, 0.058, 0.09), Color("#f8ce98"))
 	for x in [-20.8, -17.9, -14.9]:
 		_geo.cylinder(Vector3(x, 0.35, 7.15), 0.33, 0.70, Color("#8a6154"))
@@ -274,7 +294,7 @@ func _meet() -> void:
 		_geo.cylinder(Vector3(x, 0.71, 7.15), 0.375, 0.065, Color("#bd9a75"))
 		_geo.beveled(Vector3(x + 0.81, 0.23, 7.10), Vector3(0.40, 0.46, 0.43), STEEL_DARK, true)
 	_tires(Vector3(12.0, 0, 8.8), 2)
-	_directory(Vector3(4.3, 0, 5.1), -0.23)
+	_directory(Vector3(-4.98, 0, 7.6), 0.28)
 	for z in range(-22, 10, 3):
 		for x in [-2.4, 2.4]:
 			_geo.box(Vector3(x, 0.017, z), Vector3(0.12, 0.012, 1.25), AMBER.darkened(0.17))
@@ -285,14 +305,14 @@ func _meet() -> void:
 		var rival := Catalog.npc(npc_id)
 		var x: float = [-21.0, -14.2, -7.4, 7.0, 13.8, 20.6][i % 6]
 		var z := -1.0 - floorf(float(i) / 6.0) * 10.8
-		var at := Vector3(x, 0.02, z)
+		var at := Vector3(x, 0.0, z)
 		var yaw := PI - 0.25 * signf(x)
 		_park(cars.get(npc_id, {}), at, yaw, false, npc_id)
 		_parking_outline(at, yaw, AMBER.darkened(0.28))
 		var npc_pos := at + Vector3(-2.15 * signf(x), 0, 1.58)
 		var body := _person(npc_pos, i, PI + 0.38 * signf(x))
 		_target("rival", npc_id, str(rival.name), "Conversar", npc_pos + Vector3.UP, 2.55, body)
-		_name_label(str(rival.name), npc_pos, AMBER)
+		_name_label(npc_id, str(rival.name), npc_pos, AMBER)
 
 
 func _official() -> void:
@@ -306,25 +326,16 @@ func _official() -> void:
 	for x in [-21.9, 21.9]:
 		_geo.box(Vector3(x, 0.64, -4), Vector3(0.24, 1.28, 36), STEEL_DARK, true)
 		_geo.box(Vector3(x, 0.68, -4), Vector3(0.27, 0.22, 36), LIME.darkened(0.13))
-	_geo.surface(Vector3(0, -0.08, -34.0), Vector3(84, 0, 24), Color("#6c7c66"), "earth", 5.5, false)
-	_geo.box(Vector3(0, -0.03, -27.0), Vector3(84, 0.04, 5.8), Color("#343c43"))
+	_geo.surface(Vector3(0, -0.08, -40.0), Vector3(94, 0, 36), Color("#6c7c66"), "earth", 5.5, false)
+	_geo.box(Vector3(0, -0.056, -27.0), Vector3(84, 0.052, 5.8), Color("#343c43"))
 	for x in range(-36, 39, 4):
-		_geo.box(Vector3(x, 0.008, -27.0), Vector3(2.1, 0.01, 0.08), PAPER)
-	_grandstand(Vector3(-5.0, 0.13, -40.0))
+		_geo.box(Vector3(x, -0.028, -27.0), Vector3(2.1, 0.006, 0.08), PAPER)
+	_grandstand(Vector3(-5.0, -0.08, -40.0))
 	_hill(Vector3(45, -0.6, -71), 34.0, 15.0, Color("#6c8a76"))
 	_hill(Vector3(-43, -1.2, -78), 32.0, 19.0, Color("#748d7f"))
 	_hill(Vector3(10, -1.2, -117), 54.0, 23.0, Color("#849d94"))
-	_geo.beveled(Vector3(0, 3.04, -16.75), Vector3(18.0, 0.97, 0.34), Color("#2d4756"))
-	for x in [-8.65, 8.65]:
-		_geo.box(Vector3(x, 1.32, -16.75), Vector3(0.23, 2.66, 0.31), Color("#6e9ea4"), true)
-		_geo.beveled(Vector3(x, 0.14, -16.75), Vector3(0.50, 0.28, 0.55), STEEL_DARK)
-	for x in [-7.9, 7.9]:
-		for i in 3:
-			for j in 2:
-				if (i + j) % 2 == 0:
-					_geo.box(Vector3(x + 0.20 * (float(i) - 1.0), 2.91 + float(j) * 0.22, -16.57), Vector3(0.20, 0.22, 0.02), LIME)
-	_geo.sign("PADDOCK CANDEIA", Vector3(0, 3.14, -16.53), 0.0145, PAPER)
-	_geo.sign("CENTRO DE COMPETIÇÕES", Vector3(0, 2.69, -16.53), 0.0058, LIME)
+	_portal_board(Vector3(-6.6, 3.46, -17.65), Vector2(12.0, 1.15),
+		"PADDOCK CANDEIA", "CENTRO DE COMPETIÇÕES", BLUE)
 	_pit_shelter(Vector3(-17.30, 0, -9.8), "OFICIAIS", BLUE)
 	_pit_shelter(Vector3(16.9, 0, -10.4), "PREPARAÇÃO", Color("#7c9381"))
 
@@ -335,23 +346,24 @@ func _official() -> void:
 		var cup := event.has("series")
 		var at: Vector3
 		if cup:
-			at = Vector3((float(event.round) - 2.0) * 5.8, 0, -12.15)
+			at = Vector3(9.0 + (float(event.round) - 2.0) * 4.0, 0, -13.58)
 		else:
 			at = Vector3((float(ordinary) - 2.0) * 7.5, 0, -1.6)
+			if ordinary == 2:
+				at = Vector3(3.58, 0, -3.24)
 			ordinary += 1
 		var allowed: bool = _state.event_status(str(event.id)).ok
 		_terminal(at, 0.0, str(event.name), LIME if allowed else BLUE, _event_mode(event), float(event.get("reward", 0)))
 		_target("event", str(event.id), str(event.name), "Ver inscrição", at + Vector3(0, 0.93, 0.57), 2.4)
-	_geo.box(Vector3(0, 2.02, -15.24), Vector3(5.45, 0.62, 0.22), STEEL_DARK)
-	_geo.sign("COPA DA ORLA", Vector3(0, 2.12, -15.11), 0.010, LIME)
 	var cup_state: Dictionary = _state.championship.get("copa_orla", {})
-	_geo.sign("%d / 27 PONTOS" % int(cup_state.get("points", 0)), Vector3(0, 1.88, -15.10), 0.005, PAPER)
+	_portal_board(Vector3(9.0, 2.72, -17.55), Vector2(9.2, 0.96), "COPA DA ORLA",
+		"%d / 27 PONTOS" % int(cup_state.get("points", 0)), LIME)
 
 	_directory(Vector3(8.8, 0, 4.3), -0.23)
 	var car: Dictionary = _state.active_car()
 	if not car.is_empty():
 		var spec := Catalog.effective(car)
-		var at := Vector3(-9.25, 0.02, 5.3)
+		var at := Vector3(-9.25, 0.0, 5.3)
 		var body := _park(spec, at, -0.78, true)
 		_parking_outline(at, -0.78, LIME)
 		_target("staged_car", str(car.uid), str(spec.name), "Ver carro de prova", at + Vector3(0, 0.7, 0), 3.1, body)
@@ -359,11 +371,11 @@ func _official() -> void:
 	_person(Vector3(-13.4, 0, 4.7), 11, -PI * 0.51)
 	_person(Vector3(16.05, 0, 2.8), 4, PI * 0.87)
 	_person(Vector3(-13.6, 0, -5.4), 6, PI * 0.9)
-	_park(Catalog.vehicle("vetra_x"), Vector3(16.75, 0.02, 5.15), -0.13)
+	_park(Catalog.vehicle("vetra_x"), Vector3(16.75, 0.0, 5.15), -0.13)
 	_bollards(Vector3(-19.1, 0, -6.75), 5, BLUE)
 	_bollards(Vector3(14.25, 0, -6.75), 5, BLUE)
-	_terminal(Vector3(-14.6, 0, -11.3), 0.20, "TREINO LIVRE", BLUE, "PISTA ABERTA")
-	_target("practice", "", "Treino livre", "Entrar na pista", Vector3(-14.6, 0.85, -10.75), 2.35)
+	_terminal(Vector3(-12.1, 0, -10.4), 0.20, "TREINO LIVRE", BLUE, "PISTA ABERTA")
+	_target("practice", "", "Treino livre", "Entrar na pista", Vector3(-11.98, 0.85, -9.83), 2.35)
 
 
 func _market() -> void:
@@ -373,8 +385,9 @@ func _market() -> void:
 	_geo.surface(Vector3(0, 0.007, -11.61), Vector3(44, 0, 16.86), Color("#8a9287"), "slab", 5.5, false)
 	_room_wall(Vector3(0, 2.65, -20.2), Vector3(48, 5.3, 0.27), Color("#657e82"), AMBER.darkened(0.12))
 	_geo.box(Vector3(0, 5.12, -11.7), Vector3(45, 0.38, 16.95), STEEL_DARK, true)
-	_geo.beveled(Vector3(0, 4.76, -3.26), Vector3(45, 0.83, 0.31), Color("#435864"))
-	_geo.sign("REVENDA DO CAIS", Vector3(0, 4.78, -3.08), 0.018, PAPER)
+	_geo.box(Vector3(0, 4.76, -3.26), Vector3(45, 0.85, 0.34), Color("#435864"))
+	Placard.panel(_geo, Transform3D(Basis.IDENTITY, Vector3(0, 4.77, -3.087)),
+		Vector2(19.0, 0.80), "REVENDA DO CAIS", "", PAPER, AMBER)
 	_geo.light_strip(Vector3(0, 4.35, -3.10), Vector3(43.5, 0.037, 0.054), Color("#eec799"))
 	_omni(Vector3(-4.2, 4.1, -7.8), Color("#bfeff1"), 1.27, 15.0)
 	_omni(Vector3(4.2, 4.1, -7.8), Color("#ffe2c2"), 1.27, 15.0)
@@ -385,12 +398,12 @@ func _market() -> void:
 			_geo.box(Vector3(side * 21.9, 2.50, z), Vector3(0.27, 5.0, 0.38), Color("#516c72"), true)
 			_geo.box(Vector3(side * 21.9, 0.47, z), Vector3(0.36, 0.94, 0.48), AMBER.darkened(0.1))
 		var x: float = side * 21.92
-		_geo.box(Vector3(x, 1.70, -10.9), Vector3(0.14, 0.15, 13.95), STEEL)
+		for y in [1.69, 4.21]:
+			_geo.box(Vector3(x, y, -10.85), Vector3(0.13, 0.12, 13.82), STEEL)
 		for z in [-7.37, -14.20]:
 			var glass_at := Vector3(x, 2.96, z)
 			_geo.glass(glass_at, Vector3(6.64, 2.45, 0), Color(0.51, 0.66, 0.71, 0.24), PI * 0.5)
-			_geo.box(glass_at + Vector3(0, -1.29, 0), Vector3(0.11, 0.12, 6.64), STEEL)
-			_geo.box(glass_at, Vector3(0.11, 2.59, 0.085), STEEL)
+			_geo.box(glass_at, Vector3(0.12, 2.52, 0.075), STEEL)
 	for z in [-4.3, -9.8, -15.3]:
 		_geo.box(Vector3(0, 4.855, z), Vector3(44.3, 0.16, 0.27), Color("#435a5e"))
 		for x in [-17.2, -8.6, 0.0, 8.6, 17.2]:
@@ -407,22 +420,21 @@ func _market() -> void:
 		_bollards(Vector3(x - 2.1, 0, 5.0), 3, AMBER)
 
 	for x in [-12.1, 12.1]:
-		_wall_sign("PARTICULARES", Vector3(x, 2.75, 9.35), 5.2, AMBER, 0.009)
-		for side in [-1.0, 1.0]:
-			_geo.box(Vector3(x + side * 2.45, 1.37, 9.29), Vector3(0.15, 2.73, 0.16), STEEL, true)
-	_wall_sign("AVALIAÇÃO", Vector3(20.1, 2.15, 1.45), 3.73, AMBER, 0.008, -0.4)
+		_portal_board(Vector3(x, 2.69, 9.68), Vector2(5.15, 0.60), "PARTICULARES", "", AMBER)
 	_geo.box(Vector3(20.1, 3.12, 0.98), Vector3(5.2, 0.19, 3.14), Color("#597981"))
+	_placard(Vector3(20.1, 2.96, 2.52), Vector2(4.55, 0.62), "AVALIAÇÃO", "", AMBER)
 	for x in [17.75, 22.45]:
 		_geo.box(Vector3(x, 1.55, 0.01), Vector3(0.14, 3.12, 0.15), STEEL, true)
+		_geo.beam(Vector3(x, 2.48, 0.01), Vector3(x, 3.026, 2.23), 0.115, 0.14, STEEL)
 	_counter(Vector3(20.1, 0, 1.32), 3.15, -0.4, AMBER)
 	var seller := Vector3(19.8, 0, 2.43)
 	var staff := _person(seller, 3, PI - 0.4)
 	_target("sell", "", "Balcão de avaliação", "Negociar venda", seller + Vector3.UP, 2.45, staff)
-	_directory(Vector3(4.1, 0, 8.45), -0.23)
+	_directory(Vector3(3.7, 0, 11.7), -0.36)
 	for i in 10:
 		var at := _dealer_bay(i)
-		_geo.beveled(at + Vector3(0, -0.009, 0), Vector3(3.36, 0.050, 5.34), Color("#9a9d91"))
-		_parking_outline(at, PI, PAPER.darkened(0.35))
+		_geo.beveled(at - Vector3.UP * 0.024, Vector3(3.42, 0.048, 5.48), Color("#9a9d91"))
+		_parking_outline(at, PI, PAPER.darkened(0.38))
 
 	var private_slots := [-16.0, -8.15, 8.15, 16.0]
 	var booths := 0
@@ -434,27 +446,27 @@ func _market() -> void:
 		var private: bool = offer.source == "private"
 		var at: Vector3
 		if private:
-			at = Vector3(float(private_slots[booths]), 0.02, 6.25)
+			at = Vector3(float(private_slots[booths]), 0.0, 6.25)
 			booths += 1
 		else:
 			var index := catalogs.find(offer.model)
 			at = _dealer_bay(index)
-			at.y = 0.02
 		var paint := AMBER if private else LIME
 		var body := _park(spec, at, PI, false, str(offer.id))
 		if private:
 			_parking_outline(at, PI, AMBER.darkened(0.15))
 			var npc_pos := at + Vector3(2.1 * signf(at.x), 0, 1.12)
 			_person(npc_pos, people.find(offer.npc_id), PI)
-			_name_label(str(Catalog.npc(offer.npc_id).name), npc_pos, AMBER)
-		_car_plate(at, PI, "%s  /  %s" % [spec.name, Ui.money(int(offer.asking))], paint)
+			_name_label(str(offer.id), str(Catalog.npc(offer.npc_id).name), npc_pos, AMBER)
+		var plate := at if private else at - Vector3.UP * 0.019
+		_car_plate(plate, PI, str(spec.name), paint, Ui.money(int(offer.asking)))
 		_target("offer", str(offer.id), str(spec.name), "Negociar" if private else "Ver oferta",
 			at + Vector3(0, 0.78, 0), 3.25, body)
 
 
 func _dealer_bay(slot: int) -> Vector3:
 	var row := floorf(float(slot) / 5.0)
-	return Vector3(float(DEALER_X[slot % 5]) * (1.0 if row == 0.0 else -1.0), 0, -5.25 - row * 9.0)
+	return Vector3(float(DEALER_X[slot % 5]) * (1.0 if row == 0.0 else -1.0), 0.026, -5.25 - row * 9.0)
 
 
 func _target(kind: String, key: String, title: String, action: String, at: Vector3, reach: float, body: StaticBody3D = null) -> void:
@@ -493,32 +505,35 @@ func _person(at: Vector3, palette: int, yaw: float) -> StaticBody3D:
 	return Geometry.collision_box(actor, Vector3(0, 0.88, 0), Vector3(0.67, 1.7, 0.54))
 
 
-func _name_label(words: String, at: Vector3, ink: Color) -> void:
-	var tag := _geo.sign(words, at + Vector3.UP * 2.08, 0.0041, ink)
+func _name_label(key: String, words: String, at: Vector3, ink: Color) -> void:
+	var tag := Placard.line(_geo, Transform3D(Basis.IDENTITY, at + Vector3.UP * 2.11),
+		words, Vector2(2.60, 0.255), ink)
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	tag.outline_size = 6
+	tag.double_sided = true
+	tag.outline_size = 5
 	tag.outline_modulate = Color("#283039")
-	tag.visibility_range_end = 9.0
+	tag.hide()
+	_names[key] = tag
 
 
 func _parking_outline(at: Vector3, yaw: float, color: Color) -> void:
-	var foot := Vector3(at.x, 0.017 + at.y, at.z)
+	var foot := at + Vector3.UP * 0.007
 	for side in [-1.0, 1.0]:
 		var rail := Vector3(side * 1.51, 0, 0).rotated(Vector3.UP, yaw)
-		_geo.box(foot + rail, Vector3(0.056, 0.012, 5.12), color, false, yaw)
+		_geo.box(foot + rail, Vector3(0.055, 0.008, 5.04), color, false, yaw)
 	var tail := Vector3(0, 0, 2.52).rotated(Vector3.UP, yaw)
-	_geo.box(foot + tail, Vector3(3.06, 0.012, 0.07), color, false, yaw)
-	var stop := Vector3(0, 0, -2.39).rotated(Vector3.UP, yaw)
-	_geo.box(foot + stop, Vector3(1.23, 0.014, 0.12), color, false, yaw)
+	_geo.box(foot + tail, Vector3(3.08, 0.008, 0.065), color, false, yaw)
 
 
-func _car_plate(at: Vector3, yaw: float, words: String, ink: Color) -> void:
-	var position := at + Vector3(0, 0, -2.88).rotated(Vector3.UP, yaw)
-	var label := _geo.sign(words, position + Vector3(0, 0.39, 0), 0.0038, ink)
-	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.outline_size = 6
-	label.outline_modulate = STEEL_DARK
-	label.visibility_range_end = 9.5
+func _car_plate(at: Vector3, yaw: float, words: String, ink: Color, detail := "") -> void:
+	var basis := Basis(Vector3.UP, yaw)
+	var setback := 2.79 if detail.is_empty() else 3.24
+	var center := at + basis * Vector3(0, 0.004, -setback)
+	var depth := 0.41 if detail.is_empty() else 0.63
+	_geo.box(center, Vector3(2.61, 0.008, depth), Color("#354344"), false, yaw)
+	var upward := Basis(Vector3.UP, yaw + PI) * Basis(Vector3.RIGHT, -PI * 0.5)
+	Placard.panel(_geo, Transform3D(upward, center + Vector3.UP * 0.003),
+		Vector2(2.53, depth), words, detail, PAPER, ink)
 
 
 func _directory(at: Vector3, yaw: float) -> void:
@@ -532,21 +547,18 @@ func _directory(at: Vector3, yaw: float) -> void:
 
 func _terminal(at: Vector3, yaw: float, title: String, ink: Color, subtitle := "", reward := 0.0) -> void:
 	var orient := Basis(Vector3.UP, yaw)
-	var shade := Style.shadow(2.80, 1.43, 0.56, true)
+	var shade := Style.shadow(2.97, 1.52, 0.56, true)
 	shade.position = at + Vector3(0.02, 0.021, 0.04)
 	shade.rotation.y = yaw
 	_geo.add_child(shade)
-	_geo.beveled(at + Vector3.UP * 0.102, Vector3(2.18, 0.20, 0.92), STEEL_DARK, true, yaw)
-	_geo.beveled(at + Vector3.UP * 0.61, Vector3(0.52, 0.99, 0.54), Color("#657679"), true, yaw)
-	_geo.beveled(at + Vector3.UP * 1.34, Vector3(2.25, 0.71, 0.19), Color("#526269"), true, yaw)
-	_geo.box(at + orient * Vector3(0.0, 1.34, 0.099), Vector3(2.05, 0.58, 0.019), Color("#26353c"), false, yaw)
-	_geo.light_strip(at + orient * Vector3(-0.971, 1.34, 0.112), Vector3(0.035, 0.46, 0.014), ink, yaw)
-	var title_width := Ui.DISPLAY.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 58).x
-	_geo.sign(title, at + orient * Vector3(0.031, 1.44, 0.115), minf(0.0070, 1.87 / maxf(1.0, title_width)), PAPER, yaw)
-	if not subtitle.is_empty() or reward > 0.0:
-		var detail := subtitle if reward <= 0.0 else "%s · %s" % [subtitle, Ui.money(int(reward))]
-		var detail_width := Ui.DISPLAY.get_string_size(detail, HORIZONTAL_ALIGNMENT_LEFT, -1, 58).x
-		_geo.sign(detail, at + orient * Vector3(0.034, 1.17, 0.115), minf(0.0043, 1.87 / maxf(1.0, detail_width)), ink, yaw)
+	_geo.beveled(at + Vector3.UP * 0.074, Vector3(2.22, 0.16, 0.90), STEEL_DARK, true, yaw)
+	_geo.beveled(at + Vector3.UP * 0.598, Vector3(0.58, 0.924, 0.50), Color("#657679"), true, yaw)
+	_geo.beveled(at + Vector3.UP * 1.422, Vector3(2.63, 0.82, 0.23), Color("#526269"), true, yaw)
+	_geo.box(at + orient * Vector3(0.0, 1.422, 0.114), Vector3(2.42, 0.70, 0.028), Color("#26353c"), false, yaw)
+	_geo.light_strip(at + orient * Vector3(-1.11, 1.422, 0.132), Vector3(0.035, 0.53, 0.014), ink, yaw)
+	var detail := subtitle if reward <= 0.0 else "%s · %s" % [subtitle, Ui.money(int(reward))]
+	Placard.panel(_geo, Transform3D(orient, at + orient * Vector3(0.033, 1.422, 0.131)),
+		Vector2(2.40, 0.68), title, detail, PAPER, ink.lightened(0.16))
 
 
 func _event_mode(event: Dictionary) -> String:
@@ -565,14 +577,15 @@ func _pit_shelter(at: Vector3, plaque: String, ink: Color) -> void:
 		_geo.beam(at + Vector3(side * 3.04, 2.15, 1.97), at + Vector3(side * 3.04, 2.79, 0.72), 0.09, 0.11, STEEL)
 		_geo.box(at + Vector3(side * 3.03, 0.19, 1.96), Vector3(0.272, 0.38, 0.275), ink)
 	_geo.box(at + Vector3(0, 2.84, 2.18), Vector3(6.58, 0.34, 0.13), Color("#3b515b"))
-	_geo.sign(plaque, at + Vector3(0, 2.83, 2.255), 0.0074, PAPER)
+	Placard.panel(_geo, Transform3D(Basis.IDENTITY, at + Vector3(0, 2.84, 2.247)),
+		Vector2(6.42, 0.32), plaque, "", PAPER, ink)
 	_geo.light_strip(at + Vector3(0, 2.71, 0.75), Vector3(4.19, 0.07, 0.17), PAPER)
 	_counter(at + Vector3(0, 0, -0.45), 3.55, 0, ink)
 
 
 func _counter(at: Vector3, span: float, yaw: float, ink: Color) -> void:
 	var orient := Basis(Vector3.UP, yaw)
-	_geo.box(at + Vector3.UP * 0.46, Vector3(span, 0.89, 0.62), Color("#3b494a"), true, yaw)
+	_geo.box(at + Vector3.UP * 0.447, Vector3(span, 0.902, 0.62), Color("#3b494a"), true, yaw)
 	_geo.beveled(at + Vector3.UP * 0.924, Vector3(span + 0.17, 0.104, 0.74), Color("#a09985"), true, yaw)
 	_geo.box(at + orient * Vector3(0, 0.83, 0.322), Vector3(span * 0.96, 0.027, 0.012), ink, false, yaw)
 	for i in 3:
@@ -588,10 +601,20 @@ func _room_wall(at: Vector3, dimensions: Vector3, tint: Color, stripe: Color) ->
 	_geo.box(Vector3(at.x, 1.25, at.z), Vector3(dimensions.x + 0.044, 0.055, dimensions.z + 0.044), stripe)
 
 
-func _wall_sign(words: String, at: Vector3, width: float, ink: Color, scale: float, yaw := 0.0) -> void:
-	var back := Vector3(0, 0, -0.075).rotated(Vector3.UP, yaw)
-	_geo.beveled(at + back, Vector3(width, 0.66, 0.13), STEEL_DARK, false, yaw)
-	_geo.sign(words, at, scale, ink, yaw)
+func _placard(at: Vector3, size: Vector2, words: String, detail: String, ink: Color, yaw := 0.0) -> void:
+	var basis := Basis(Vector3.UP, yaw)
+	_geo.beveled(at, Vector3(size.x, size.y, 0.23), STEEL_DARK, false, yaw)
+	Placard.panel(_geo, Transform3D(basis, at + basis.z * 0.118), size, words, detail, PAPER, ink)
+
+
+func _portal_board(at: Vector3, size: Vector2, words: String, detail: String, ink: Color) -> void:
+	_placard(at, size, words, detail, ink)
+	var height := at.y - size.y * 0.5 + 0.12
+	for side in [-1.0, 1.0]:
+		var foot := Vector3(at.x + side * (size.x * 0.5 - 0.32), 0, at.z)
+		_geo.box(foot + Vector3.UP * (height * 0.5), Vector3(0.19, height, 0.20), STEEL, true)
+		_geo.beveled(foot + Vector3.UP * 0.092, Vector3(0.43, 0.195, 0.51), STEEL_DARK)
+		_geo.box(foot + Vector3(0, height - 0.31, 0.102), Vector3(0.11, 0.43, 0.03), ink)
 
 
 func _fence(at: Vector3, width: float) -> void:
@@ -640,7 +663,8 @@ func _crane(at: Vector3, mirror: bool) -> void:
 	var sign_x := -1.0 if mirror else 1.0
 	var paint := Color("#5b555d")
 	for x in [-3.25, 3.25]:
-		_geo.box(at + Vector3(x, 4.34, 0), Vector3(0.46, 8.68, 0.54), paint)
+		_geo.beveled(at + Vector3(x, -0.30, -1.65), Vector3(1.36, 0.81, 4.53), Color("#515865"))
+		_geo.box(at + Vector3(x, 4.34, 0), Vector3(0.46, 8.71, 0.54), paint)
 		_geo.beam(at + Vector3(x * 1.22, 0, -3.8), at + Vector3(x, 7.4, 0), 0.36, 0.41, paint.darkened(0.16))
 	_geo.box(at + Vector3(sign_x * 2.0, 8.73, 0.0), Vector3(17.1, 0.25, 0.49), paint)
 	_geo.box(at + Vector3(sign_x * 2.0, 9.87, 0.0), Vector3(17.1, 0.23, 0.39), paint)
@@ -651,7 +675,8 @@ func _crane(at: Vector3, mirror: bool) -> void:
 		_geo.beam(at + Vector3((x + next) * 0.5, 9.83, 0), at + Vector3(next, 8.76, 0), 0.14, 0.22, paint)
 	_geo.beveled(at + Vector3(-sign_x * 3.12, 8.18, 0.64), Vector3(1.26, 1.08, 1.32), paint.lightened(0.13))
 	_geo.box(at + Vector3(-sign_x * 3.12, 8.32, 1.275), Vector3(0.96, 0.45, 0.056), Color("#50606a"))
-	_geo.box(at + Vector3(sign_x * 8.65, 7.2, 0.0), Vector3(0.070, 3.5, 0.065), paint.darkened(0.4))
+	_geo.box(at + Vector3(sign_x * 8.65, 8.67, 0.0), Vector3(0.56, 0.35, 0.63), paint)
+	_geo.box(at + Vector3(sign_x * 8.65, 7.02, 0.0), Vector3(0.070, 3.25, 0.065), paint.darkened(0.4))
 	_geo.beveled(at + Vector3(sign_x * 8.65, 5.40, 0.0), Vector3(0.37, 0.25, 0.35), paint)
 	_geo.light_strip(at + Vector3(sign_x * 10.39, 9.97, 0), Vector3(0.13, 0.17, 0.13), Color("#eb8d6f"))
 
@@ -665,7 +690,7 @@ func _grandstand(at: Vector3) -> void:
 			if x in [-7, 7]:
 				continue
 			var color := Color("#527784") if absi(x) < 7 else Color("#8b9f96")
-			_geo.beveled(at + Vector3(x, y + 0.18, z + 0.08), Vector3(0.86, 0.29, 0.38), color.lightened(float(row % 2) * 0.075))
+			_geo.beveled(at + Vector3(x, y + 0.135, z + 0.08), Vector3(0.86, 0.29, 0.38), color.lightened(float(row % 2) * 0.075))
 	_geo.box(at + Vector3(0, 5.70, -3.15), Vector3(42.5, 0.22, 6.1), Color("#657a7c"))
 	for x in [-20.2, -6.8, 6.8, 20.2]:
 		_geo.box(at + Vector3(x, 2.85, -5.75), Vector3(0.24, 5.7, 0.22), STEEL_DARK)

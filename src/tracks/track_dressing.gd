@@ -3,12 +3,13 @@ extends Node3D
 
 const Style = preload("res://src/art/scene_style.gd")
 const Forms = preload("res://src/art/mesh_forms.gd")
-const Ui = preload("res://src/ui/ui_kit.gd")
+const Placard = preload("res://src/art/placard.gd")
 const WHITE := Color("#eee8d7")
 const ORANGE := Color("#dc8c55")
 const CYAN := Color("#86bcb5")
 const DIRECTIONS := Color("#203c42")
 const PROP_CELL := 144.0
+const BANK_CELL := 12.0
 
 class Surface:
 	var vertices := PackedVector3Array()
@@ -55,6 +56,13 @@ var _config: Dictionary
 var _quality := 1
 var _rng := RandomNumberGenerator.new()
 var _batches: Dictionary
+var _stations := PackedFloat64Array()
+var _centerline := PackedVector2Array()
+var _ground_bounds: Rect2
+var _ground_cells: Vector2i
+var _ground_heights := PackedFloat32Array()
+var _banks: Dictionary[Vector2i, PackedVector3Array] = {}
+var _sites: Array[Rect2] = []
 
 
 func build(track: Node3D, config: Dictionary) -> void:
@@ -62,6 +70,8 @@ func build(track: Node3D, config: Dictionary) -> void:
 	_config = config
 	_quality = track.quality
 	_rng.seed = track.track_id.hash()
+	for point: Vector3 in _track.centerline():
+		_centerline.append(Vector2(point.x, point.z))
 	_sky()
 	_ground()
 	_road()
@@ -74,6 +84,10 @@ func build(track: Node3D, config: Dictionary) -> void:
 		_:
 			_speedway()
 	_flush_batches()
+	_banks.clear()
+	_ground_heights.clear()
+	_sites.clear()
+	_centerline.clear()
 
 
 func _sky() -> void:
@@ -122,6 +136,9 @@ func _ground() -> void:
 	var step := 30.0 if not mountain else (15.0 if _quality == 0 else 12.0)
 	var dx := ceili((x1 - x0) / step)
 	var dz := ceili((z1 - z0) / step)
+	_ground_bounds = Rect2(x0, z0, x1 - x0, z1 - z0)
+	_ground_cells = Vector2i(dx, dz)
+	_ground_heights.resize((dx + 1) * (dz + 1))
 	var coarse_line := PackedVector3Array()
 	if mountain:
 		for index in range(ceili(_track.length / 15.0) + 1):
@@ -135,6 +152,7 @@ func _ground() -> void:
 			var point_z := lerpf(z0, z1, row / float(dz))
 			var elevation := _ridge_height(point_x, point_z, coarse_line) if mountain else ground_y
 			grid[row * (dx + 1) + column] = Vector3(point_x, elevation, point_z)
+			_ground_heights[row * (dx + 1) + column] = elevation
 	for row in dz:
 		for column in dx:
 			var i := row * (dx + 1) + column
@@ -147,6 +165,84 @@ func _ground() -> void:
 			surface.triangle(a, b, c, base, (c - a).cross(b - a).normalized())
 			surface.triangle(a, c, d, base, (d - a).cross(c - a).normalized())
 	_place_surface("Terreno", surface, 1.0, "concrete" if docks else "earth", 10.5)
+
+
+func _soil_height(point: Vector2) -> float:
+	var cell := (point - _ground_bounds.position) / _ground_bounds.size * Vector2(_ground_cells)
+	cell = cell.clamp(Vector2.ZERO, Vector2(_ground_cells))
+	var col := mini(floori(cell.x), _ground_cells.x - 1)
+	var row := mini(floori(cell.y), _ground_cells.y - 1)
+	var stride := _ground_cells.x + 1
+	var i := row * stride + col
+	var x := cell.x - col
+	var z := cell.y - row
+	var a := _ground_heights[i]
+	var b := _ground_heights[i + 1]
+	var c := _ground_heights[i + stride + 1]
+	var d := _ground_heights[i + stride]
+	if x >= z:
+		return lerpf(a, b, x) + (c - b) * z
+	return lerpf(a, d, z) + (c - d) * x
+
+
+func _bank_cell(point: Vector3) -> Vector2i:
+	return Vector2i(floori(point.x / BANK_CELL), floori(point.z / BANK_CELL))
+
+
+func _index_banks(vertices: PackedVector3Array) -> void:
+	for i in range(0, vertices.size(), 3):
+		var a := vertices[i]
+		var b := vertices[i + 1]
+		var c := vertices[i + 2]
+		var low := _bank_cell(a.min(b).min(c))
+		var high := _bank_cell(a.max(b).max(c))
+		for row in range(low.y, high.y + 1):
+			for col in range(low.x, high.x + 1):
+				var cell := Vector2i(col, row)
+				var tile: PackedVector3Array = _banks.get(cell, PackedVector3Array())
+				tile.append(a)
+				tile.append(b)
+				tile.append(c)
+				_banks[cell] = tile
+
+
+func _footing(at: Vector3) -> float:
+	var floor_y := _soil_height(Vector2(at.x, at.z))
+	var cell := _bank_cell(at)
+	if not _banks.has(cell):
+		return floor_y
+	var tile := _banks[cell]
+	var from := Vector3(at.x, at.y + 65.0, at.z)
+	for i in range(0, tile.size(), 3):
+		var hit: Variant = Geometry3D.ray_intersects_triangle(from, Vector3.DOWN, tile[i], tile[i + 1], tile[i + 2])
+		if hit is Vector3:
+			floor_y = maxf(floor_y, hit.y)
+	return floor_y
+
+
+func _reserve(at: Vector3, size: Vector2, basis: Basis, gap: float = 1.2) -> bool:
+	var center := Vector2(at.x, at.z)
+	var axis_x := Vector2(basis.x.x, basis.x.z)
+	var axis_z := Vector2(basis.z.x, basis.z.z)
+	var span := axis_x.abs() * size.x + axis_z.abs() * size.y
+	var area := Rect2(center - span * 0.5, span)
+	if not _ground_bounds.encloses(area):
+		return false
+	var padded := area.grow(gap * 0.5)
+	for used in _sites:
+		if used.intersects(padded):
+			return false
+	# The extra two metres cover the space between consecutive centerline samples.
+	var corridor: float = _track.half_width + 3.9
+	var nearby := area.grow(corridor)
+	var limits := size * 0.5 + Vector2.ONE * corridor
+	for point in _centerline:
+		if nearby.has_point(point):
+			var to_road := point - center
+			if absf(to_road.dot(axis_x)) <= limits.x and absf(to_road.dot(axis_z)) <= limits.y:
+				return false
+	_sites.append(padded)
+	return true
 
 
 func _ridge_height(x: float, z: float, coarse_line: PackedVector3Array) -> float:
@@ -169,24 +265,25 @@ func _road() -> void:
 	var road := Surface.new()
 	var verges := Surface.new()
 	var paint := Surface.new()
+	var grid := Surface.new()
 	var width: float = _track.half_width
 	var road_color: Color = _config.road
 	var shoulder: Color = _config.shoulder
 	var mountain: bool = _track.track_id == "serra" and _track.mode != "drag"
-	var start := 0.0 if _track.closed else -32.0
-	var end: float = _track.length if _track.closed else _track.length + 44.0
-	var divisions := ceili((end - start) / 4.0)
-	var current := _frame(start)
+	_stations = _track.stations()
+	if not _track.closed:
+		_stations.insert(0, -16.0)
+		_stations.insert(0, -32.0)
+		_stations.append(_track.length + 20.0)
+		_stations.append(_track.length + 44.0)
+	var divisions := _stations.size() - 1
+	var current: Dictionary = _track.pavement_frame(_stations[0])
 	for i in divisions:
-		var d := lerpf(start, end, (i + 1) / float(divisions))
-		var next := _frame(d)
-		var shade := (sin(i * 0.12) - 0.08) * 0.021
+		var next: Dictionary = _track.pavement_frame(_stations[i + 1])
+		var shade := sin(TAU * 7.0 * i / float(divisions)) * 0.018
 		_strip(road, current, next, -width, width, 0, 0, road_color.lightened(shade))
-		if not mountain and _track.mode != "drag":
-			var wear := 0.025 + 0.011 * sin(i * 0.21)
-			_strip(road, current, next, -2.30, 2.30, 0.008, 0.008, road_color.darkened(wear))
 		for side in [-1.0, 1.0]:
-			_strip(road, current, next, side * width, side * (width + 1.35), -0.01, -0.08, shoulder)
+			_strip(road, current, next, side * width, side * (width + 1.35), 0.0, -0.08, shoulder)
 			var verge: Color = _config.ground_a.lerp(_config.ground_b, 0.39)
 			if mountain:
 				_strip(verges, current, next, side * (width + 1.35), side * (width + 10.0), -0.08, -2.65, verge)
@@ -201,14 +298,16 @@ func _road() -> void:
 		_line(paint, -20.0, _track.length + 26.0, -0.09, 0.09, _config.stripe)
 	else:
 		_midline(paint)
-	_grid(paint)
-	var finish: float = 0.0 if _track.closed else _track.length
+	_grid(grid)
+	var finish: float = _track.start_line if _track.closed else _track.length
 	_checkered(paint, finish, width)
 	if not _track.closed:
 		_line(paint, _track.start_line, _track.start_line + 0.22, -width, width, WHITE)
 	_place_surface("Asfalto", road, 0.91 if _track.track_id == "docas" else 0.98, "asphalt", 5.7)
 	_place_surface("Taludes", verges, 1.0, "concrete" if _track.track_id == "docas" else "earth", 6.2)
+	_index_banks(verges.vertices)
 	_place_surface("Sinalização horizontal", paint, 0.92)
+	_place_surface("Marcas de largada", grid, 0.92)
 
 
 func _strip(surface: Surface, a: Dictionary, b: Dictionary, left: float, right: float, y_left: float, y_right: float, color: Color) -> void:
@@ -216,22 +315,28 @@ func _strip(surface: Surface, a: Dictionary, b: Dictionary, left: float, right: 
 	var bp: Vector3 = b.position
 	var ar: Vector3 = a.right
 	var br: Vector3 = b.right
-	var normal := (ar.cross(bp - ap)).normalized()
-	if normal.y < 0.0:
-		normal = -normal
-	surface.quad(
-		ap + ar * left + Vector3.UP * y_left, ap + ar * right + Vector3.UP * y_right,
-		bp + br * right + Vector3.UP * y_right, bp + br * left + Vector3.UP * y_left, color, normal,
-	)
+	var near_left := ap + ar * left + Vector3.UP * y_left
+	var near_right := ap + ar * right + Vector3.UP * y_right
+	var far_right := bp + br * right + Vector3.UP * y_right
+	var far_left := bp + br * left + Vector3.UP * y_left
+	var normal := (near_right - near_left).cross(far_left - near_left).normalized()
+	if normal.y > 0.0:
+		surface.quad(near_left, far_left, far_right, near_right, color, normal)
+	else:
+		surface.quad(near_left, near_right, far_right, far_left, color, -normal)
 
 
 func _line(surface: Surface, first: float, last: float, left: float, right: float, color: Color, h := 0.024) -> void:
-	var segments := maxi(1, ceili((last - first) / 3.8))
-	var previous := _frame(first)
-	for i in range(1, segments + 1):
-		var next := _frame(lerpf(first, last, i / float(segments)))
+	if last <= first:
+		return
+	var previous: Dictionary = _track.pavement_frame(first)
+	var index := _stations.bsearch(first, false)
+	while index < _stations.size() and _stations[index] < last:
+		var next: Dictionary = _track.pavement_frame(_stations[index])
 		_strip(surface, previous, next, left, right, h, h, color)
 		previous = next
+		index += 1
+	_strip(surface, previous, _track.pavement_frame(last), left, right, h, h, color)
 
 
 func _frame(distance: float) -> Dictionary:
@@ -256,19 +361,19 @@ func _midline(paint: Surface) -> void:
 
 
 func _grid(paint: Surface) -> void:
-	var width: float = _track.half_width
+	var half: float = _track.GRID_HALF_WIDTH
+	for i in int(_track.grid_size):
+		var slot: Vector2 = _track.starting_slot(i, _track.grid_size)
+		var front: float = slot.x + _track.GRID_FRONT
+		_line(paint, front - 0.13, front, slot.y - half, slot.y + half, WHITE, 0.030)
+		for edge in [slot.y - half, slot.y + half - 0.11]:
+			_line(paint, front - 1.02, front - 0.13, edge, edge + 0.11, WHITE, 0.030)
 	if _track.mode == "drag":
-		for d in [5.0, 105.0, 205.0, 305.0]:
+		var width: float = _track.half_width
+		for mark in [100.0, 200.0, 300.0]:
+			var d: float = mark + _track.DRAG_GRID
 			for side in [-1.0, 1.0]:
-				_line(paint, d, d + 0.20, side * (width - 0.35), side * (width - 1.90), WHITE)
-		return
-	for i in 3:
-		var d := 1.5 + 6.0 * i
-		for side in [-1.0, 1.0]:
-			var lane: float = side * 1.7
-			_line(paint, d, d + 0.15, lane - 1.12, lane + 1.12, WHITE, 0.029)
-			for inset in [-1.12, 1.12]:
-				_line(paint, d, d + 0.82, lane + inset - 0.07, lane + inset + 0.07, WHITE, 0.029)
+				_line(paint, d - 0.10, d + 0.10, side * (width - 0.35), side * (width - 1.90), WHITE)
 
 
 func _checkered(paint: Surface, d: float, width: float) -> void:
@@ -283,67 +388,52 @@ func _checkered(paint: Surface, d: float, width: float) -> void:
 
 
 func _start_and_finish() -> void:
-	var heading := "CANDEIA  /  CIRCUITO"
-	var subheading := "VALE DA CANDEIA"
+	var heading := str(_track.route_name).to_upper()
 	var accent := ORANGE
 	match _track.track_id:
 		"docas":
-			heading = "CAIS FERRUGEM"
-			subheading = "SETOR 06  •  ACESSO NORTE"
 			accent = CYAN
 		"serra":
-			heading = "ALTO DA LUA"
-			subheading = "BR-63  •  ROTA DA SERRA"
 			accent = Color("#e7ba7f")
 	if _track.mode == "drag":
 		heading = "402 M  /  ARRANCADA"
-	_gantry(_track.start_line + (9.0 if _track.mode == "drag" else 0.0), heading, subheading, accent)
+	_gantry(_track.start_line, heading, accent)
 	if not _track.closed:
-		_gantry(_track.length + 0.8, "CHEGADA", "402 M" if _track.mode == "drag" else _track.route_name.to_upper(), accent)
+		_gantry(_track.length, "CHEGADA", accent)
 		for mark in range(100, int(_track.length), 100):
 			if _track.mode == "drag":
-				_road_sign(mark + _track.start_line, 1.0, str(mark) + " M", accent)
+				_road_sign(mark + _track.DRAG_GRID, 1.0, str(mark) + " M", accent)
 			elif mark % 300 == 0:
 				_road_sign(mark, -1.0, "%d M" % mark, accent)
-	var frequency := 27 if _quality == 0 else 18
-	for i in range(0, int(_track.length), frequency):
-		var frame := _frame(i)
-		var width: float = _track.half_width
-		for side in [-1.0, 1.0]:
-			var post: Vector3 = frame.position + frame.right * (side * (width + 1.43))
-			_box(post + Vector3.UP * 0.19, Vector3(0.12, 0.57, 0.15), Color("#adb3a9"))
-			_box(post + Vector3.UP * 0.40, Vector3(0.15, 0.10, 0.18), accent, Basis.IDENTITY, true)
 
 
-func _gantry(distance: float, title: String, subtitle: String, accent: Color) -> void:
+func _gantry(distance: float, title: String, accent: Color) -> void:
 	var frame := _frame(distance)
-	var width: float = _track.half_width + 2.5
+	var width: float = _track.half_width + 3.75
 	var upright := _basis(frame)
 	var deck: Vector3 = frame.position
+	var crown := deck + Vector3.UP * 5.62
+	var top := crown.y - 0.51
 	for side in [-1.0, 1.0]:
-		var base: Vector3 = deck + frame.right * (width * side)
-		_box(base + Vector3.UP * 2.46, Vector3(0.62, 6.07, 0.64), Color("#435258"), upright)
-		_box(base + Vector3.UP * 0.26, Vector3(1.35, 0.64, 1.18), Color("#68716a"), upright)
-		_box(base + Vector3.UP * 3.67 - frame.forward * 0.33, Vector3(0.16, 2.30, 0.05), accent, upright, _track.track_id == "docas")
-	_box(deck + Vector3.UP * 5.58, Vector3(width * 2.0 + 1.46, 1.96, 0.74), Color("#283941"), upright)
-	_box(deck + Vector3.UP * 6.61, Vector3(width * 2.0 + 1.58, 0.14, 0.78), accent, upright, _track.track_id == "docas")
-	_box(deck + Vector3.UP * 4.66, Vector3(width * 2.0 + 1.50, 0.16, 0.78), Color("#708380"), upright)
-	for side in [-1.0, 1.0]:
-		for i in 3:
-			var right: Vector3 = frame.right * (side * (width - 0.6 - i * 0.34))
-			_box(deck + right + Vector3.UP * (5.38 + i * 0.17) - frame.forward * 0.43, Vector3(0.21, 0.46, 0.05), accent, upright, true)
-	_label(title, deck + Vector3.UP * 5.94 - frame.forward * 0.42, upright, 0.023, WHITE)
-	_label(subtitle, deck + Vector3.UP * 5.10 - frame.forward * 0.43, upright, 0.010, accent)
+		var base: Vector3 = deck + upright.x * (width * side)
+		base.y = _footing(base)
+		_pillar(base, top, Vector2(0.62, 0.62), Color("#435258"), upright)
+		_prop("beveled", base + Vector3.UP * 0.22, Vector3(1.12, 0.49, 1.05), Color("#697571"), upright)
+		_box(Vector3(base.x, top - 1.23, base.z) + upright.z * 0.308,
+			Vector3(0.12, 1.42, 0.04), accent, upright, _track.track_id == "docas")
+	var size := Vector3(width * 2.0 + 1.05, 1.96, 0.64)
+	_route_board(crown, size, upright, title, "", accent, Color("#283941"))
+	_box(crown + Vector3.UP * 1.001, Vector3(size.x + 0.08, 0.065, 0.69), accent, upright)
 
 
 func _road_sign(distance: float, side: float, text: String, accent: Color) -> void:
 	var frame := _frame(distance)
 	var upright := _basis(frame)
-	var base: Vector3 = frame.position + frame.right * side * (_track.half_width + 2.7)
-	_box(base + Vector3.UP * 0.85, Vector3(0.12, 1.74, 0.14), Color("#5a655f"), upright)
-	_box(base + Vector3.UP * 1.63, Vector3(2.24, 0.73, 0.15), DIRECTIONS, upright)
-	_box(base + Vector3.UP * 1.98, Vector3(2.24, 0.07, 0.17), accent, upright)
-	_label(text, base + Vector3.UP * 1.65 - frame.forward * 0.09, upright, 0.009, WHITE)
+	var base: Vector3 = frame.position + frame.right * side * (_track.half_width + 4.4)
+	base.y = _footing(base)
+	_pillar(base, base.y + 1.65, Vector2(0.12, 0.14), Color("#5a655f"), upright)
+	_route_board(base + Vector3.UP * 1.65, Vector3(2.18, 0.71, 0.145), upright, text, "", accent, DIRECTIONS)
+	_box(base + Vector3.UP * 2.012, Vector3(2.18, 0.047, 0.16), accent, upright)
 
 
 func _speedway() -> void:
@@ -351,40 +441,53 @@ func _speedway() -> void:
 	var panel := Color("#7f9594")
 	var stand: Dictionary = _frame(56)
 	var upright := _basis(stand)
-	for row in range(5 if _quality == 0 else 8):
-		var rise := row * 0.64
-		var side := -15.5 - row * 1.42
-		var base: Vector3 = stand.position + stand.right * side + Vector3.UP * (0.28 + rise)
-		_box(base, Vector3(1.62, 0.53, 89), graphite, upright)
-		_box(base + Vector3.UP * 0.27, Vector3(1.40, 0.08, 88.1), Color("#b0b0a4"), upright)
+	var canopy: Vector3 = stand.position - upright.x * 20.7
+	canopy.y = _footing(canopy)
+	_reserve(canopy, Vector2(16, 101), upright)
+	_box(canopy + Vector3.UP * 0.02, Vector3(15.0, 0.14, 95.4), Color("#697575"), upright)
+	for row in 8:
+		var rise := 0.63 + row * 0.55
+		var side := 5.20 - row * 1.37
+		var deck := canopy + upright.x * side + Vector3.UP * rise
+		_box(deck - Vector3.UP * (rise * 0.5 + 0.022), Vector3(1.37, rise + 0.05, 89.0), graphite, upright)
+		_box(deck + Vector3.UP * 0.018, Vector3(1.34, 0.073, 88.22), Color("#a6a89c"), upright)
 		var seats := Color("#6b8e93") if row % 3 != 0 else Color("#a49a77")
 		for section in 5:
-			var bench: Vector3 = base + stand.forward * ((float(section) - 2.0) * 17.1) + Vector3.UP * 0.43
-			_box(bench, Vector3(0.75, 0.25, 15.6), seats, upright)
-			_box(bench - stand.right * 0.29 + Vector3.UP * 0.13, Vector3(0.15, 0.24, 15.4), seats.darkened(0.15), upright)
-	var canopy: Vector3 = stand.position + stand.right * -20.7
+			var bench: Vector3 = deck + stand.forward * ((float(section) - 2.0) * 17.1) + Vector3.UP * 0.148
+			_box(bench, Vector3(0.78, 0.20, 15.6), seats, upright)
+			_box(bench - upright.x * 0.29 + Vector3.UP * 0.12, Vector3(0.16, 0.22, 15.4), seats.darkened(0.15), upright)
 	for i in 8:
 		var d := (i - 3.5) * 12.5
 		var pier: Vector3 = canopy + stand.forward * d
-		_box(pier + stand.right * -6.9 + Vector3.UP * 3.72, Vector3(0.42, 7.43, 0.45), graphite, upright)
-		_box(pier + Vector3.UP * 7.27, Vector3(14.8, 0.19, 12.51), panel, upright)
-		_beam(pier - stand.right * 6.9 + Vector3.UP * 5.51,
-			pier + stand.right * 3.9 + Vector3.UP * 7.20, 0.22, 0.27, graphite)
-	_box(canopy + stand.right * 7.36 + Vector3.UP * 7.23, Vector3(0.23, 0.35, 100.2), ORANGE.darkened(0.16), upright)
+		pier.y = canopy.y
+		_pillar(pier - upright.x * 6.9, canopy.y + 7.22, Vector2(0.42, 0.45), graphite, upright)
+		_beam(pier - upright.x * 6.9 + Vector3.UP * 5.51,
+			pier + upright.x * 3.9 + Vector3.UP * 7.20, 0.22, 0.27, graphite)
+	_box(canopy + Vector3.UP * 7.27, Vector3(14.8, 0.19, 100.2), panel, upright)
+	_box(canopy + upright.x * 7.36 + Vector3.UP * 7.23, Vector3(0.23, 0.35, 100.2), ORANGE.darkened(0.16), upright)
 	var pit := _frame(47)
 	var pit_basis := _basis(pit)
+	var apron: Vector3 = pit.position + pit_basis.x * 21.0 + pit_basis.z * -5.0
+	apron.y = _footing(apron)
+	_reserve(apron, Vector2(16.5, 69.0), pit_basis)
+	_box(apron + Vector3.UP * 0.032, Vector3(16.4, 0.125, 68.8), Color("#7f8376"), pit_basis)
 	for i in 9:
-		var p: Vector3 = pit.position + pit.right * 22.8 + pit.forward * ((i - 3.8) * 7.2)
-		_box(p + Vector3.UP * 1.8, Vector3(10.4, 4.16, 7.0), panel.darkened(0.16), pit_basis)
+		var p: Vector3 = pit.position + pit_basis.x * 22.8 + pit.forward * ((i - 3.8) * 7.2)
+		p.y = apron.y + 0.09
+		_box(p + Vector3.UP * 1.95, Vector3(10.4, 3.90, 7.0), panel.darkened(0.16), pit_basis)
 		var door: Vector3 = p - pit.right * 5.23
 		_box(door + Vector3.UP * 1.47, Vector3(0.12, 2.86, 5.75), Color("#3e4e53"), pit_basis)
 		_box(door - pit.right * 0.073 + Vector3.UP * 1.63, Vector3(0.04, 2.47, 5.44), Color("#6c7a78"), pit_basis)
 		for tread in [0.65, 1.15, 1.65, 2.15, 2.65]:
 			_box(door - pit.right * 0.10 + Vector3.UP * tread, Vector3(0.022, 0.032, 5.41), graphite, pit_basis)
 		_box(door - pit.right * 0.13 + Vector3.UP * 3.07, Vector3(0.19, 0.20, 5.73), ORANGE, pit_basis)
-	_box(pit.position + pit.right * 22.8 + Vector3.UP * 3.97, Vector3(12.2, 0.35, 66.6), Color("#a4aaa0"), pit_basis)
-	var control: Vector3 = pit.position + pit.right * 34.0 + pit.forward * 15.0
-	_box(control + Vector3.UP * 5.27, Vector3(13, 11, 14), graphite, pit_basis)
+	var pit_roof: Vector3 = pit.position + pit_basis.x * 22.8 + pit.forward * 1.44
+	pit_roof.y = apron.y + 4.01
+	_box(pit_roof, Vector3(12.2, 0.27, 66.6), Color("#a4aaa0"), pit_basis)
+	var control: Vector3 = pit.position + pit_basis.x * 37.6 + pit.forward * 15.0
+	control.y = _footing(control)
+	_reserve(control, Vector2(15.3, 16.1), pit_basis)
+	_box(control + Vector3.UP * 5.38, Vector3(13, 10.80, 14), graphite, pit_basis)
 	_box(control + Vector3.UP * 10.95, Vector3(15.3, 0.62, 16.1), ORANGE.darkened(0.22), pit_basis)
 	_box(control + Vector3.UP * 9.63, Vector3(13.12, 1.70, 14.12), Color("#88a6af"), pit_basis)
 	for panel_z in [-5.4, -1.8, 1.8, 5.4]:
@@ -392,7 +495,7 @@ func _speedway() -> void:
 	for d in [25.0, 98.0, 167.0, 269.0, 354.0, 449.0, 568.0, 688.0, 796.0, 936.0, 1060.0]:
 		if d < _track.length - 10:
 			_floodlight(d, 1.0 if fmod(d, 2.0) == 0.0 else -1.0, WHITE)
-	_road_sign(105.0, 1.0, "BOX  /  100", ORANGE)
+	_road_sign(_track.length - 28.0, 1.0, "BOXES", ORANGE)
 	_sponsor(135.0, -1.0, "CANDEIA", "MOTOR CLUBE", ORANGE)
 	_sponsor(_track.length * 0.48, -1.0, "ZARCO", "COMPONENTES", CYAN)
 	_sponsor(_track.length * 0.75, 1.0, "VALE", "AUTOMOTIVO", ORANGE)
@@ -408,11 +511,11 @@ func _speedway_infield() -> void:
 		var side := -1.0 if sector % 3 != 0 else 1.0
 		var upright := _basis(frame)
 		var center: Vector3 = frame.position + frame.right * side * (_track.half_width + 23.0)
-		if not _clear(center, 18.0):
+		if not _reserve(center, Vector2(22.0, 31.0), upright):
 			continue
-		center.y = -0.13
+		center.y = _footing(center)
 		var roof := ORANGE.darkened(0.24) if sector % 2 == 0 else Color("#819590")
-		_box(center + Vector3.UP * 0.20, Vector3(16.8, 0.35, 25.0), Color("#626d67"), upright)
+		_box(center + Vector3.UP * 0.05, Vector3(16.8, 0.14, 25.0), Color("#626d67"), upright)
 		_box(center + Vector3.UP * 2.0, Vector3(9.4, 3.77, 13.0), Color("#546464"), upright)
 		_box(center + Vector3.UP * 3.94, Vector3(11.2, 0.32, 14.9), roof, upright)
 		_box(center + Vector3.UP * 2.28 - frame.right * side * 4.74, Vector3(0.16, 0.90, 10.8), Color("#9aa99c"), upright)
@@ -421,9 +524,10 @@ func _speedway_infield() -> void:
 			_box(flag + Vector3.UP * 2.13, Vector3(0.08, 4.6, 0.08), Color("#74847e"), upright)
 			_box(flag + Vector3.UP * 3.78, Vector3(0.09, 1.36, 1.04), ORANGE if i % 2 == 0 else CYAN, upright)
 		if _quality > 0:
-			for i in 6:
-				var convoy: Vector3 = center + frame.forward * (16.0 + (i / 3) * 5.1) + frame.right * (i % 3) * 3.0
-				if _clear(convoy, 5.0):
+			for i in 3:
+				var convoy: Vector3 = center + frame.forward * 20.0 + frame.right * (i - 1) * 3.3
+				if _reserve(convoy, Vector2(2.1, 4.25), upright, 0.7):
+					convoy.y = _footing(convoy)
 					_service_van(convoy, upright, [WHITE, Color("#8ca5a1"), ORANGE][i % 3])
 
 
@@ -438,30 +542,31 @@ func _speedway_horizon() -> void:
 		var a := _rng.randf_range(0.0, TAU)
 		var radius := _rng.randf_range(116, 270)
 		var at := Vector3(103, 2.3, 45) + Vector3(cos(a), 0.0, sin(a)) * radius
-		var model: Dictionary = _track.project(at)
-		if absf(model.lateral) > _track.half_width + 11.0 and at.distance_to(model.position) > 31.0:
-			var size := _rng.randf_range(3.0, 6.35)
-			_prop("tree", at, Vector3(size * 0.74, size, size * 0.61), Color("#56716a").lightened(_rng.randf_range(-0.19, 0.13)), Basis(Vector3.UP, a))
+		var size := _rng.randf_range(3.0, 6.35)
+		var basis := Basis(Vector3.UP, a)
+		if _reserve(at, Vector2.ONE * size * 0.68, basis, 4.0):
+			at.y = _footing(at)
+			_tree(at, size, Color("#56716a").lightened(_rng.randf_range(-0.16, 0.13)), basis)
 
 
 func _docks() -> void:
 	var slate := Color("#53616d")
 	var colors: Array[Color] = [Color("#a56d55"), Color("#5e7887"), Color("#9a8969"), Color("#4f726f"), Color("#765a67")]
-	for i in range(16 if _quality == 0 else 28):
-		var z := -31.0 + i * 13.8
-		var x := 18.0 + (i % 3) * 2.5
-		_container(Vector3(x, 1.645, z), colors[i % colors.size()], Basis.IDENTITY)
-		if i % 4 != 2:
-			_container(Vector3(x, 4.075, z), colors[(i + 2) % colors.size()], Basis.IDENTITY)
-			if i % 5 < 2 and _quality != 0:
-				_container(Vector3(x, 6.505, z), colors[(i + 3) % colors.size()], Basis.IDENTITY)
-	var warehouse_count := 3 if _quality == 0 else 6
-	for i in warehouse_count:
-		var at := Vector3(49.0 + (i % 2) * 8.0, 0.4, 24 + i * 38.0)
-		_warehouse(at, i, slate)
+	for i in (6 if _quality == 0 else 9):
+		var at := Vector3(18.5 + (i % 3) * 2.3, 0, -15.0 + i * 21.0)
+		if _reserve(at, Vector2(2.58, 12.02), Basis.IDENTITY, 2.4):
+			at.y = _footing(at)
+			_container_stack(at, i, colors, Basis.IDENTITY, 1 if i % 4 == 2 else 2)
+	for i in (3 if _quality == 0 else 5):
+		var at := Vector3(45.5 + (i % 2) * 6.0, 0, 20 + i * 41.0)
+		if _reserve(at, Vector2(20.5, 35.4), Basis.IDENTITY, 2.4):
+			at.y = _footing(at)
+			_warehouse(at, i, slate)
 	for i in 4:
-		var z := 24.0 + i * 55.0
-		_dock_crane(Vector3(-19.0, 0.46, z), i)
+		var base := Vector3(-19.0, 0.0, 26.0 + i * 56.0)
+		if _reserve(base, Vector2(11.6, 12.5), Basis.IDENTITY):
+			base.y = _footing(base)
+			_dock_crane(base, i)
 	_prop("hull", Vector3(-57.0, 0.57, 91.0), Vector3(29.0, 3.5, 124.0), Color("#2d3e4a"))
 	_prop("hull", Vector3(-57.0, 2.48, 91.0), Vector3(29.02, 0.55, 124.06), Color("#97745e"))
 	_prop("hull", Vector3(-57.0, 3.38, 91.0), Vector3(25.5, 1.38, 116.5), slate)
@@ -470,16 +575,16 @@ func _docks() -> void:
 	_box(Vector3(-54.43, 10.91, 57), Vector3(0.15, 1.35, 12.8), Color("#4b6474"))
 	for z in [52.0, 55.3, 58.6, 61.9]:
 		_box(Vector3(-54.30, 10.89, z), Vector3(0.18, 1.40, 0.15), slate)
-	for i in range(12 if _quality == 0 else 23):
-		var z := 33.0 + i * 5.2
-		_box(Vector3(-48.45, 3.55, z), Vector3(1.65, 0.22, 2.2), Color("#e5bb70"), Basis.IDENTITY, true)
-	for i in range(22 if _quality == 0 else 39):
-		var z := -120.0 + i * 17
+	for i in 9:
+		var z := 45.0 + i * 10.8
+		_box(Vector3(-47.8, 3.95, z), Vector3(0.73, 0.39, 0.77), slate.darkened(0.14))
+		_box(Vector3(-47.42, 3.99, z), Vector3(0.045, 0.16, 0.46), Color("#e5bb70"), Basis.IDENTITY, true)
+	_box(Vector3(-247.0, -0.97, 146.0), Vector3(95.0, 1.36, 570.0), slate.darkened(0.28))
+	for i in range(16 if _quality == 0 else 25):
+		var z := -120.0 + i * 22.0
 		var x := -240.0 + _rng.randf_range(-35, 30)
 		var h := _rng.randf_range(3.8, 28.0)
 		_box(Vector3(x, h * 0.5 - 2.0, z), Vector3(_rng.randf_range(13, 27), h, _rng.randf_range(9, 15)), slate.darkened(_rng.randf_range(0.14, 0.58)))
-		if i % 3 == 1:
-			_box(Vector3(x + 9, h * 0.7 - 2.0, z), Vector3(0.20, 0.31, 2.9), Color("#c89e60"), Basis.IDENTITY, true)
 	for i in range(10, int(_track.length), 42 if _quality == 0 else 29):
 		_floodlight(i, -1.0 if i % 2 == 0 else 1.0, Color("#ffd291"), true)
 	_dock_yards(colors)
@@ -489,31 +594,26 @@ func _docks() -> void:
 	var street: Surface = Surface.new()
 	for i in 23:
 		var z := -10.0 + i * 9.0
-		var x := -20.2 + (i % 2) * 0.4
-		street.quad(Vector3(x, 0.449, z), Vector3(x + 0.11, 0.449, z), Vector3(x + 0.16, 0.449, z + 6.2), Vector3(x, 0.449, z + 6.2), Color("#9b8256"))
+		var x := -16.9
+		street.quad(Vector3(x, 0.449, z), Vector3(x + 0.10, 0.449, z), Vector3(x + 0.10, 0.449, z + 5.5), Vector3(x, 0.449, z + 5.5), Color("#9b8256"))
 	_place_surface("Faixas do cais", street, 1.0)
 
 
 func _dock_yards(colors: Array[Color]) -> void:
-	var patch_count := ceili((_track.length - 224.0) / 114.0)
-	for patch in range(patch_count):
-		var frame := _frame(251.0 + patch * 114.0)
+	var patch := 0
+	for distance in range(245, int(_track.length) - 28, 125):
+		var frame := _frame(distance)
 		var upright := _basis(frame)
 		for side in [-1.0, 1.0]:
-			for row in (1 if _quality == 0 else 2):
-				for slot in range(3 if _quality == 0 else 5):
-					var center: Vector3 = frame.position + frame.forward * ((slot - 2) * 13.0)
-					center += frame.right * side * (_track.half_width + 5.7 + row * 4.7)
-					if center.x < -23.5 or not _clear(center, 5.2):
-						continue
-					center.y = 0.44
-					var color_index := (slot + row * 2 + patch) % colors.size()
-					_container(center + Vector3.UP * 1.2, colors[color_index], upright)
-					if (slot + row + patch) % 4 < 2:
-						_container(center + Vector3.UP * 3.64, colors[(color_index + 1) % colors.size()], upright)
-			var shed: Vector3 = frame.position + frame.right * side * (25.0 + (patch % 2) * 12.0)
-			if shed.x > -15.0 and _clear(shed, 17.0):
-				shed.y = 0.44
+			for slot in (2 if _quality == 0 else 3):
+				var center: Vector3 = frame.position + frame.forward * ((slot - 1) * 15.0)
+				center += upright.x * side * (_track.half_width + 8.6)
+				if _reserve(center, Vector2(2.58, 12.02), upright, 2.2):
+					center.y = _footing(center)
+					_container_stack(center, slot + patch, colors, upright, 1 + int((slot + patch) % 3 == 0))
+			var shed: Vector3 = frame.position + upright.x * side * (31.5 + (patch % 2) * 9.0)
+			if _reserve(shed, Vector2(20.0, 32.0), upright, 3.0):
+				shed.y = _footing(shed)
 				var shell := Color("#556775").darkened((patch % 4) * 0.05)
 				_box(shed + Vector3.UP * 4.0, Vector3(18.0, 8.1, 29.0), shell, upright)
 				_box(shed + Vector3.UP * 8.13, Vector3(19.5, 0.67, 30.0), shell.darkened(0.33), upright)
@@ -521,25 +621,30 @@ func _dock_yards(colors: Array[Color]) -> void:
 					var entrance: Vector3 = shed + frame.forward * ((door - 1) * 8.0) - frame.right * side * 9.1
 					_box(entrance + Vector3.UP * 2.03, Vector3(0.15, 4.10, 6.10), Color("#34454d"), upright)
 					_box(entrance + Vector3.UP * 4.39, Vector3(0.24, 0.15, 5.87), Color("#f0c17d"), upright, true)
-				if patch % 3 == 0:
-					_service_van(shed + frame.forward * 17.6, upright, ORANGE.darkened(0.16))
+				var van: Vector3 = shed + frame.forward * 18.7 - upright.x * side * 5.5
+				if patch % 3 == 0 and _reserve(van, Vector2(2.05, 4.36), upright):
+					van.y = _footing(van)
+					_service_van(van, upright, ORANGE.darkened(0.16))
+		patch += 1
 
 
 func _service_van(at: Vector3, upright: Basis, color: Color) -> void:
-	_box(at + Vector3.UP * 0.56, Vector3(1.85, 0.40, 4.2), Color("#354247"), upright)
-	_box(at + Vector3.UP * 1.22 + upright.z * 0.26, Vector3(1.78, 1.37, 3.61), color, upright)
-	_box(at + Vector3.UP * 1.47 - upright.z * 1.55, Vector3(1.70, 0.59, 0.11), Color("#546d74"), upright)
+	_prop("beveled", at + Vector3.UP * 0.63, Vector3(1.82, 0.68, 4.09), color.darkened(0.12), upright)
+	_prop("beveled", at + Vector3.UP * 1.20 + upright.z * 0.25, Vector3(1.74, 1.37, 3.46), color, upright)
+	_box(at + Vector3.UP * 1.42 - upright.z * 1.46, Vector3(1.55, 0.52, 0.052), Color("#435c68"), upright)
+	_box(at + Vector3.UP * 0.50 - upright.z * 2.044, Vector3(1.71, 0.17, 0.078), Color("#354247"), upright)
 	for side in [-1.0, 1.0]:
+		_box(at + upright * Vector3(side * 0.64, 0.71, -2.044), Vector3(0.29, 0.116, 0.052), WHITE, upright)
 		for axle in [-1.26, 1.31]:
-			var wheel := Vector3(side * 0.91, 0.38, axle)
-			_box(at + upright * wheel, Vector3(0.20, 0.57, 0.53), Color("#30383a"), upright)
+			var wheel := Vector3(side * 0.84, 0.296, axle)
+			_prop("rim_tire", at + upright * wheel, Vector3(0.62, 0.25, 0.62), Color("#30383a"),
+				upright * Basis(Vector3.FORWARD, PI * 0.5))
 
 
-func _clear(location: Vector3, margin: float) -> bool:
-	var nearest: Dictionary = _track.project(location)
-	var difference: Vector3 = location - nearest.position
-	difference.y = 0.0
-	return difference.length() > _track.half_width + margin
+func _container_stack(at: Vector3, palette: int, colors: Array[Color], orientation: Basis, levels: int) -> void:
+	for i in levels:
+		var center := at + Vector3.UP * ((i + 0.5) * 2.43 - 0.028)
+		_container(center, colors[(palette + i * 2) % colors.size()], orientation)
 
 
 func _container(at: Vector3, color: Color, orientation: Basis) -> void:
@@ -548,9 +653,9 @@ func _container(at: Vector3, color: Color, orientation: Basis) -> void:
 		for row in [-1.145, 1.145]:
 			_box(at + orientation.x * side * 1.214 + Vector3.UP * row, Vector3(0.057, 0.14, 11.76), color.darkened(0.28), orientation)
 		if _quality != 0:
-			for rib in range(18):
-				var at_rib: Vector3 = at + orientation.x * side * 1.207 + orientation.z * (-5.44 + rib * 0.64)
-				_box(at_rib, Vector3(0.067, 2.13, 0.23), color.lightened(0.10), orientation)
+			for rib in 12:
+				var at_rib: Vector3 = at + orientation.x * side * 1.207 + orientation.z * (-5.04 + rib * 0.91)
+				_box(at_rib, Vector3(0.055, 2.12, 0.22), color.lightened(0.072), orientation)
 	_box(at - orientation.z * 5.91, Vector3(1.87, 1.88, 0.06), color.darkened(0.25), orientation)
 	for offset in [-0.32, 0.32]:
 		_box(at - orientation.z * 5.96 + orientation.x * offset, Vector3(0.036, 1.77, 0.044), Color("#88908a"), orientation)
@@ -603,69 +708,90 @@ func _mountains() -> void:
 		var at := world_center + Vector3(cos(angle) * radius, -29.0, sin(angle) * radius)
 		var dimensions := Vector3(_rng.randf_range(100, 275), _rng.randf_range(68, 159), _rng.randf_range(88, 260))
 		_prop("peak", at, dimensions, mountain_color.lightened(_rng.randf_range(-0.23, 0.16)), Basis(Vector3.UP, angle))
-	var stride := 26 if _quality == 0 else 15
+	var stride := 26 if _quality == 0 else 18
 	for distance in range(3, int(_track.length), stride):
 		var frame := _frame(distance)
 		var p: Vector3 = frame.position
 		var right: Vector3 = frame.right
 		var steep: float = absf(frame.curvature)
 		for side in [-1.0, 1.0]:
-			var count := 2 if _quality == 0 else 4
+			var count := 2 if _quality == 0 else 3
 			for i in count:
-				var offset: float = side * _rng.randf_range(_track.half_width + 4.2, _track.half_width + 16.0)
+				var offset: float = side * _rng.randf_range(_track.half_width + 6.0, _track.half_width + 23.0)
 				var wave: float = _rng.randf_range(-6.0, 6.0)
 				var location: Vector3 = p + right * offset + frame.forward * wave
 				var basis := Basis(Vector3.UP, _rng.randf() * TAU)
 				var height := _rng.randf_range(1.8, 5.1)
-				var gap := absf(offset) - float(_track.half_width)
-				var bank := lerpf(-0.08, -2.65, clampf((gap - 1.35) / 8.65, 0, 1))
-				if gap > 10.0:
-					bank = -2.10 - absf(offset) * 0.065
-				var footing := p.y + float(frame.grade) * wave + bank
 				if i == 0 or _rng.randf() > 0.57:
-					location.y = footing + height * 0.24
-					_prop("stone", location, Vector3(height * 1.18, height * 0.69, height * 0.95), Color("#8c8374").lightened(_rng.randf_range(-0.18, 0.16)), basis)
+					var size := Vector3(height * 1.18, height * 0.69, height * 0.95)
+					if _reserve(location, Vector2(size.x, size.z), basis, 2.3):
+						var bottom := size.y * 0.30
+						location.y = _footing(location) + bottom
+						_prop("stone", location, size, Color("#8c8374").lightened(_rng.randf_range(-0.14, 0.16)), basis)
 				else:
-					location.y = footing + height * 0.64
-					var leaf := Color("#526c57").lightened(_rng.randf_range(-0.16, 0.16))
-					_prop("tree", location, Vector3(height * 0.73, height * 0.97, height * 0.72), leaf, basis)
-					_box(location - Vector3.UP * height * 0.39, Vector3(0.145, height * 0.64, 0.145), Color("#6d5d4b"), basis)
+					if _reserve(location, Vector2.ONE * height * 0.73, basis, 2.5):
+						location.y = _footing(location)
+						var leaf := Color("#526c57").lightened(_rng.randf_range(-0.16, 0.16))
+						_tree(location, height, leaf, basis)
 		if steep > 0.017:
 			_chevron(distance, signf(frame.curvature))
+
+
+func _tree(at: Vector3, height: float, leaf: Color, basis: Basis) -> void:
+	var trunk := Vector3(height * 0.062, height * 0.45, height * 0.058)
+	_prop("trunk", at + Vector3.UP * (trunk.y * 0.5 - 0.08), trunk, Color("#6d5d4b"), basis)
+	_prop("tree", at + Vector3.UP * height * 0.79, Vector3(height * 0.73, height * 0.97, height * 0.72), leaf, basis)
 
 
 func _chevron(distance: float, side: float) -> void:
 	var frame := _frame(distance)
 	var basis := _basis(frame)
-	var base: Vector3 = frame.position + frame.right * side * (_track.half_width + 2.4)
-	_box(base + Vector3.UP * 0.68, Vector3(0.10, 1.45, 0.09), Color("#8a8a75"), basis)
-	_prop("beveled", base + Vector3.UP * 1.34, Vector3(0.98, 0.73, 0.11), Color("#cfa256"), basis)
-	_label("›" if side < 0.0 else "‹", base + Vector3.UP * 1.39 - frame.forward * 0.067, basis, 0.016, Color("#403631"))
+	var base: Vector3 = frame.position + frame.right * side * (_track.half_width + 3.25)
+	base.y = _footing(base)
+	_pillar(base, base.y + 1.40, Vector2(0.10, 0.11), Color("#8a8a75"), basis)
+	_route_board(base + Vector3.UP * 1.4, Vector3(0.98, 0.73, 0.11), basis,
+		"›" if side < 0.0 else "‹", "", Color("#403631"), Color("#cfa256"), Color("#403631"))
 
 
 func _rails(spacing: int, shade: Color, both: bool) -> void:
-	for distance in range(1, int(_track.length - spacing), spacing):
-		var frame := _frame(distance)
-		var next := _frame(distance + spacing - 0.20)
-		for side in [-1.0, 1.0]:
-			if not both and side > 0.0 and (distance / spacing) % 7 > 2:
+	var length: float = _track.length
+	var spans := ceili(length / float(spacing))
+	for side in [-1.0, 1.0]:
+		var setback: float = side * (_track.half_width + 2.18)
+		var built := false
+		for i in spans:
+			var first := length * i / float(spans)
+			var last := length * (i + 1) / float(spans)
+			var active: bool = both or side < 0.0 or i % 9 < 5
+			if not active:
+				if built:
+					_rail_post(_rail_point(first, setback), shade, _basis(_frame(first)))
+				built = false
 				continue
-			if both and distance > 96 and (distance / spacing) % 11 > 5:
-				continue
-			var setback: float = side * (_track.half_width + 1.75)
-			var a: Vector3 = frame.position + frame.right * setback + Vector3.UP * 0.47
-			var b: Vector3 = next.position + next.right * setback + Vector3.UP * 0.47
-			var length := a.distance_to(b)
-			var axis := (a - b).normalized()
-			var right := Vector3.UP.cross(axis).normalized()
-			var basis := Basis(right, axis.cross(right).normalized(), axis)
-			var rail := (a + b) * 0.5
-			_box(rail, Vector3(0.12, 0.25, length + 0.05), shade.darkened(0.12), basis)
-			for y in [-0.092, 0.093]:
-				_box(rail + Vector3.UP * y, Vector3(0.158, 0.064, length + 0.05), shade, basis)
-			_box(a - Vector3.UP * 0.05, Vector3(0.15, 1.01, 0.16), shade.darkened(0.37), basis)
-			if _track.track_id == "serra":
-				_box(a + Vector3.UP * 0.151, Vector3(0.19, 0.070, 0.21), Color("#bda174"), basis)
+			var a := _rail_point(first, setback)
+			_rail_post(a, shade, _basis(_frame(first)))
+			var segments := 2 if absf(float(_frame((first + last) * 0.5).curvature)) > 0.0035 else 1
+			for j in range(1, segments + 1):
+				var b := _rail_point(lerpf(first, last, j / float(segments)), setback)
+				_beam(a, b, 0.14, 0.28, shade.darkened(0.12))
+				_beam(a + Vector3.UP * 0.103, b + Vector3.UP * 0.103, 0.181, 0.056, shade)
+				a = b
+			built = true
+		if not _track.closed and built:
+			_rail_post(_rail_point(length, setback), shade, _basis(_frame(length)))
+
+
+func _rail_point(distance: float, setback: float) -> Vector3:
+	var frame: Dictionary = _track.pavement_frame(distance)
+	var point: Vector3 = frame.position + frame.right * setback
+	point.y = _footing(point) + 0.74
+	return point
+
+
+func _rail_post(at: Vector3, shade: Color, basis: Basis) -> void:
+	var foot := at - Vector3.UP * 0.74
+	_pillar(foot, at.y + 0.06, Vector2(0.15, 0.17), shade.darkened(0.41), basis)
+	_box(at + Vector3.UP * 0.152, Vector3(0.16, 0.069, 0.19), shade.lerp(ORANGE, 0.48), basis)
 
 
 func _floodlight(distance: float, side: float, accent: Color, docks := false) -> void:
@@ -673,11 +799,13 @@ func _floodlight(distance: float, side: float, accent: Color, docks := false) ->
 	var base: Vector3 = frame.position + frame.right * side * (_track.half_width + (3.4 if docks else 7.4))
 	var upright := _basis(frame)
 	var h := 6.3 if docks else 11.2
-	_box(base + Vector3.UP * (h * 0.50), Vector3(0.13, h, 0.13), Color("#657178"), upright)
-	_box(base + Vector3.UP * h - frame.right * side * 0.65, Vector3(1.45, 0.14, 0.20), Color("#57626a"), upright)
+	base.y = _footing(base)
+	_pillar(base, base.y + h, Vector2(0.14, 0.14), Color("#657178"), upright)
+	_prop("beveled", base + Vector3.UP * 0.126, Vector3(0.30, 0.28, 0.33), Color("#576269"), upright)
+	_box(base + Vector3.UP * h - upright.x * side * 0.63, Vector3(1.43, 0.19, 0.28), Color("#57626a"), upright)
 	for i in 2 if docks else 4:
-		var at: Vector3 = base + Vector3.UP * h - frame.right * side * (0.18 + i * 0.35) - frame.forward * 0.10
-		_box(at, Vector3(0.28, 0.14, 0.20), accent, upright, true)
+		var light_at: Vector3 = base + Vector3.UP * (h - 0.032) - upright.x * side * (0.19 + i * 0.31) + upright.z * 0.141
+		_box(light_at, Vector3(0.243, 0.097, 0.025), accent, upright, true)
 	if docks:
 		var at: Vector3 = frame.position + frame.right * side * (_track.half_width - 1.4) + Vector3.UP * 0.017
 		_prop("spill", at, Vector3(12.8, 1.0, 14.0), accent.darkened(0.22), upright)
@@ -686,13 +814,17 @@ func _floodlight(distance: float, side: float, accent: Color, docks := false) ->
 func _sponsor(distance: float, side: float, title: String, subtitle: String, accent: Color) -> void:
 	var frame := _frame(distance)
 	var upright := _basis(frame)
-	var base: Vector3 = frame.position + frame.right * side * (_track.half_width + 7.2)
+	var base: Vector3 = frame.position + frame.right * side * (_track.half_width + 8.8)
+	if not _reserve(base, Vector2(7.55, 0.68), upright, 1.5):
+		return
+	var top: float = _footing(base) + 3.72
 	for x in [-2.62, 2.62]:
-		_box(base + frame.right * x + Vector3.UP * 1.28, Vector3(0.17, 2.75, 0.18), Color("#849595"), upright)
-	_box(base + Vector3.UP * 2.93, Vector3(7.4, 2.32, 0.26), Color("#34434a"), upright)
-	_box(base + Vector3.UP * 4.13, Vector3(7.45, 0.18, 0.29), accent, upright)
-	_label(title, base + Vector3.UP * 3.23 - frame.forward * 0.15, upright, 0.020, WHITE)
-	_label(subtitle, base + Vector3.UP * 2.39 - frame.forward * 0.17, upright, 0.0085, accent)
+		var foot: Vector3 = base + upright.x * x
+		foot.y = _footing(foot)
+		_pillar(foot, top - 1.58, Vector2(0.17, 0.18), Color("#849595"), upright)
+	base.y = top - 0.91
+	_route_board(base, Vector3(7.44, 1.82, 0.26), upright, title, subtitle, accent, Color("#34434a"))
+	_box(base + Vector3.UP * 0.922, Vector3(7.46, 0.055, 0.29), accent, upright)
 
 
 func _basis(frame: Dictionary) -> Basis:
@@ -711,20 +843,17 @@ func _place_surface(title: String, surface: Surface, roughness: float, finish_na
 	add_child(shape)
 
 
-func _label(text: String, at: Vector3, orientation: Basis, pixels: float, shade: Color) -> void:
-	var label := Label3D.new()
-	label.text = text
-	label.position = at
-	label.basis = orientation
-	label.font = Ui.DISPLAY
-	label.font_size = 62
-	label.pixel_size = pixels
-	label.modulate = shade
-	label.outline_size = 4
-	label.outline_modulate = Color("#263238")
-	label.double_sided = false
-	label.visibility_range_end = 150.0
-	add_child(label)
+func _route_board(at: Vector3, size: Vector3, basis: Basis, title: String, detail: String,
+		accent: Color, background: Color, lettering := WHITE) -> void:
+	_prop("beveled", at, size, background, basis)
+	Placard.panel(self, Transform3D(basis, at + basis.z * (size.z * 0.5)),
+		Vector2(size.x, size.y), title, detail, lettering, accent)
+
+
+func _pillar(foot: Vector3, top: float, size: Vector2, tint: Color, basis: Basis) -> void:
+	var low := foot.y - 0.07
+	var support := Vector3(foot.x, (low + top) * 0.5, foot.z)
+	_box(support, Vector3(size.x, maxf(0.10, top - low), size.y), tint, basis)
 
 
 func _box(at: Vector3, dimensions: Vector3, shade: Color, orientation := Basis.IDENTITY, emissive := false) -> void:
@@ -783,6 +912,15 @@ func _get_prop_mesh(key: String) -> Mesh:
 		return _light_spill()
 	if key == "beveled":
 		return Forms.cabinet()
+	if key in ["trunk", "rim_tire"]:
+		var cylinder := CylinderMesh.new()
+		cylinder.top_radius = 0.5
+		cylinder.bottom_radius = 0.5
+		cylinder.height = 1.0
+		cylinder.rings = 0
+		cylinder.radial_segments = 8 if key == "trunk" else 16
+		cylinder.material = material
+		return cylinder
 	var rings: Array[Vector4] = []
 	match key:
 		"tree":

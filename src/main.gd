@@ -62,7 +62,7 @@ func _open_practice(track: String) -> void:
 		return
 	var route := Routes.get_route(track)
 	_launch_race({
-		"event": {"mode": "practice", "track": track, "course_mode": "circuit" if track == "autodromo" else "sprint",
+		"event": {"mode": "practice", "track": track, "course_mode": str(route.practice_mode),
 			"name": str(route.name), "opponents": 0},
 		"car": Catalog.effective(car), "opponents": [], "settings": game_state.settings,
 	})
